@@ -60,6 +60,7 @@ void maintain_decision();	//Î¬ÐÞ
 /**************************¸÷ÖÖ¸¨Öúº¯Êý****************/
 int abs(int x, int y) { return x > y ? x - y : y - x; }
 int dist(Position a, Position b) { return abs(a.x, b.x) + abs(a.y, b.y); }
+Position find_best(int building_type);
 
 
 bool construct_legal(Position pos) {

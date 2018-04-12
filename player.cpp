@@ -28,7 +28,7 @@ enum operation {			//各种操作
 	upgrade
 };
 
-enum map_identify {
+enum map_identify {			//地图标识
 	blank,
 	my_building,
 	en_building,
@@ -39,28 +39,61 @@ enum map_identify {
 	base
 };
 
-int programmer_num = 0;
-int defending_num = 0;
-int producing_num = 0;
-int map[MAP_SIZE][MAP_SIZE];	//自定义地图，显示所有建筑位置
-vector<Building> building_last;	//上一回合所有建筑
-vector<Building>* building = state->building;
+enum _atrributes {			//评估函数包含的属性
+	_type,
+	_attack,
+	_resource,
+	_range,
+	_hp,
+	_pos,
+	_special,
+	_attribute
+};
+
+
+
+
+
+
+
 /***********************参数表************************/
+const float utility_weight1[Soldier_Type][_attribute] = {
+	//单位				攻击		资源		攻击距离		生命		位置		特殊加成
+	{ BIT_STREAM,		0.4,	0,		0.05,		0.4,	0,		0 },
+	{ VOLTAGE_SOURCE,	0.35,	0,		0.05,		0.45,	0,		0 },
+	{ CURRENT_SOURCE,	0.4,	0,		0,			0.4,	0.5,	0 },
+	{ ENIAC,			0.4,	0,		0.05,		0.4,	0,		0 },
+	{ PACKET,			0.4,	0,		0,			0.4,	0.5,	0 },
+	{ OPTICAL_FIBER,	0.35,	0,		0.05,		0.45,	0,		0 },
+	{ TURING_MACHINE,	0.4,	0,		0.05,		0.4,	0,		0 },
+	{ ULTRON,			0.4,	0,		0,			0.4,	0.5,	0 }
+};
+
+const float utility_weight2[Building_Type][_attribute] = {
+	//建筑				攻击		资源		攻击距离		生命		位置		特殊加成
+	{ __Base,			0,		0,		0,			0,		0,		0 },
+	{ Shannon,			0.1,	0,		0,			0.4,	0,		0 },
+	{ Thevenin,			0.1,	0,		0,			0.4,	0,		0 },
+	{ Norton,			0.1,	0,		0,			0.4,	0.3,	0 },
+	{ Von_Neumann,		0.1,	0,		0,			0.4,	0,		0 },
+	{ Berners_Lee,		0.1,	0,		0,			0.4,	0.33,	0 },
+	{ Kuen_Kao,			0.1,	0,		0,			0.4,	0,		0 },
+	{ Turing,			0.1,	0,		0,			0.4,	0,		0 },
+	{ Tony_Stark,		0.1,	0,		0,			0.4,	0.4,	0 },
+	{ Bool,				0.2,	0,		0.05,		0.5,	0,		0 },
+	{ Ohm,				0.4,	0,		0.05,		0.5,	0,		4 },//可以发动特效时，加成特殊*加成函数
+	{ Mole,				0.3,	0,		0.07,		0.5,	0,		2 },
+	{ Monte_Carlo,		0.3,	0,		0.05,		0.5,	0,		0 },
+	{ Larry_Roberts,	0.4,	0,		0.05,		0.5,	0,		3 },
+	{ Robert_Kahn,		0.4,	0,		0.05,		0.5,	0,		1 },
+	{ Musk,				0,		0,		0.2,		0.8,	0,		20 },
+	{ Hawkin,			0,		0,		0.3,		0.8,	0,		30 },
+	{ Programmer,		0,		1,		0,			0,		0.1,	0 }
+};
 
 
 
-												/*****************************主要流程函数***************/
-void init();
-void fresh_map();	//更新自己的地图，标明建筑
-void fresh_threaten();	//更新威胁值
-void fresh_weight();	//更新权重
-void update_decision();	//升级决策
-void construct_decision();	//建造决策
-void sell_decision();		//除旧迎新
-void maintain_decision();	//维修
-
-
-							/**************************各种辅助函数****************/
+/**************************各种辅助函数**********************/
 int abs(int x, int y) { return x > y ? x - y : y - x; }
 int dist(Position a, Position b) { return abs(a.x, b.x) + abs(a.y, b.y); }
 Position find_best(int building_type);
@@ -373,9 +406,7 @@ void Tree::refresh_unit() {		//将敌方unit统计表清零，并重新统计
 	}
 }
 
-float Tree::calculate_unit_threat(Soldier a) {
 
-}
 
 
 

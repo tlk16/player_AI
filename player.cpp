@@ -70,7 +70,13 @@ bool construct_legal(Position pos) {
 
 }
 
+float calculate_utility(Soldier a) {
+	
+}
 
+float calculate_utility(Building b) {
+
+}
 
 void f_player()
 {
@@ -79,9 +85,6 @@ void f_player()
 
 };
 
-void fresh_map() {
-
-}
 
 /**************************行为树部分****************/
 
@@ -108,67 +111,81 @@ public:
 };
 
 /*******************************各种子类*******************************/
-class _UpgradeAGE :public Node			//升级时代
+class _UpgradeAGE :public Node			//升级时代，每回合预留最低权重的资源，若可升级，就升级
 {
 public:
 	int assess();
 	void execute();
 };
-class _Resource :public Node			//获取资源 
-{
+class _Resource :public Node			//获取资源，一般不需要维修，但过时建筑需要清理或者升级，每回合资源获取量要定一个函数来判断
+{										//考虑敌方资源获取量
 public:
 	int assess();
-
 	void execute();
+	int evaluate();						//资源获取目标估计
 };
 class _Development :public Node			//建造 进攻或防守 
-{
+										//计算攻击和防御需要达到的效用值，再加上原有的攻击防御偏好，分配每个行为的值
+{								
 public:
 	int assess();
 	void execute();
 };
 
-class _Attack :public Node
-{
-public:
-	int assess();
-
-	void execute();
-};
-class _Defend :public Node
+class _Attack :public Node				//根据权值表来，附带考虑对方的防御建筑效用表，进行对应策略
 {
 public:
 	int assess();
 	void execute();
 };
-class _Programmar :public Node			//通过码农获取资源 
+class _Defend :public Node				//根据每条路每个单位的威胁值进行分配，按照需要程度分配，某些单位有对应克制单位，这些单位加大投入，
+										//其余就按照权值表来
 {
+public:
+	int assess();
+	void execute();
+	float table[8] = {};				//防御建筑权值表
+	void fresh_table();					//防御建筑权值更新，不能建的建筑权值为0，特殊克制建筑权值上升，其余简直按效用值排序，总和归一化
+};
+class _Programmar :public Node			//码农的维修，升级，建造，单独有个效用函数，根据每回合获得的需要效用值进行
+{										//感觉码农不需要考虑太复杂，建造时生产到远一点的位置就行，基本不需要考虑维修
 public:
 	int assess();
 	void execute();
 };
-class _Sell :public Node				//通过卖房子获取资源 
+class _Sell :public Node				//通过卖房子获取资源
 {
 public:
 	int assess();
 	void execute();
+	vector<Building> sell_list();		//若效用小于某一个阈值（可以定为平均值75%），则淘汰，有数量上限
+										//顺便再考虑当建筑数量较多时，出售效用较低的一批建筑
 };
 
 class _BuildingNode	:public Node		//代表行为树中建筑节点部分
-{
+{										//决策说明：假设有评估效用的函数，该节点需要达到某效用值，
+										//此外还有成本限制数
+										//遍历全部建筑得到 每个建筑，每种操作(f,c)
+										//目标：选取某建筑下的某操作，使得sum(ci)最小且在成本预算内，达到效用最大化；
+										//可以先写个简化版
+
 public:
 	int assess();
 	void execute();
+
+	void attribute();				//决策如何分配建筑，按整数分配到下面的节点，由成本决定
+
 	BuildingType buildingtype;
 	_BuildingNode(BuildingType b) :buildingtype(b) {}
+
 };
-class _BuildingMethod : public Node {	//决定以何种方式加强建筑
+/*class _BuildingMethod : public Node {	//决定以何种方式加强建筑
 public:
 	int assess();
 	void execute();
 	BuildingType buildingtype;
 	_BuildingMethod(BuildingType b) : buildingtype(b) {}
-};
+};*/
 class _Construct :public Node
 {
 public:
@@ -176,14 +193,25 @@ public:
 	void execute();
 	BuildingType buildingtype;
 	_Construct(BuildingType b) :buildingtype(b) {}
+
+	void fresh_num(int num) { construct_num = (num >= 0) ? num : 0; }
+	Position find_best_place();			//寻找到最佳的位置来建造
+private:
+	int construct_num = 0;
 };
 class _Maintain :public Node
 {
 public:
+	
 	int assess();
 	void execute();
 	BuildingType buildingtype;
-	_Maintain(BuildingType b) :buildingtype(b) {}
+	_Maintain(BuildingType b) :buildingtype(b) {}	
+
+	void fresh_num(int num) { maintain_num = (num >= 0) ? num : 0; }
+	vector<Building> min_cost();	//返回维修费用最少的，限定数量的建筑，切记每回合维修最多20%的血量
+private:
+	int maintain_num = 0;
 };
 class _Upgrade :public Node
 {
@@ -192,6 +220,11 @@ public:
 	void execute();
 	BuildingType buildingtype;
 	_Upgrade(BuildingType b) :buildingtype(b) {}
+
+	void fresh_num(int num) { upgrade_num = (num >= 0) ? num : 0; }
+	vector<Building> min_cost();		//返回升级费用最小且最优的建筑
+private:
+	int upgrade_num = 0;
 };
 /***************************子节点声明结束*************************/
 
@@ -214,7 +247,7 @@ void Node::tick(int f_power, int f_resource, int f_utility)
 	else
 		execute();
 
-}
+}//????
 
 class Tree
 {
@@ -225,7 +258,7 @@ public:
 	void init_map();		//初始化地图
 	void refresh_map();		//刷新己方地图
 	void refresh_unit();	//刷新单位数量信息
-	float calculate_unit_threat(Soldier a);	//计算威胁值
+	void tranverse();		//遍历
 private:
 	//参数表
 	float threaten_buliding[all_buildings_num] = {};				//敌方各种类型单位的威胁值
@@ -269,6 +302,15 @@ Tree::Tree()
 
 		}
 };
+
+void Tree::tranverse() {
+	refresh_map();
+	refresh_unit();
+	evaluate();									//分配好第一层值，在每个子节点的execute函数尾写出对下一层子节点的递归操作
+	for (int i = 0; i <= 2; i++) {
+		this->root->children[i]->execute();
+	}
+}
 
 void Tree::refresh_map() {	//更新地图
 	if (state->turn >= 1) {
@@ -352,9 +394,7 @@ int _Defend::assess() {
 }
 int _BuildingNode::assess() {
 }
-int _BuildingMethod::assess() {
-	//决定是维修、建造、还是升级 
-}
+
 int _Programmar::assess() {
 }
 int _Sell::assess() {

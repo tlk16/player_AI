@@ -47,6 +47,7 @@ enum _atrributes {			//评估函数包含的属性
 	_hp,
 	_pos,
 	_special,
+	_preference,
 	_attribute
 };
 
@@ -58,37 +59,37 @@ enum _atrributes {			//评估函数包含的属性
 
 /***********************参数表************************/
 const float utility_weight1[Soldier_Type][_attribute] = {
-	//单位				攻击		资源		攻击距离		生命		位置		特殊加成
-	{ BIT_STREAM,		0.4,	0,		0.05,		0.4,	0,		0 },
-	{ VOLTAGE_SOURCE,	0.35,	0,		0.05,		0.45,	0,		0 },
-	{ CURRENT_SOURCE,	0.4,	0,		0,			0.4,	0.5,	0 },
-	{ ENIAC,			0.4,	0,		0.05,		0.4,	0,		0 },
-	{ PACKET,			0.4,	0,		0,			0.4,	0.5,	0 },
-	{ OPTICAL_FIBER,	0.35,	0,		0.05,		0.45,	0,		0 },
-	{ TURING_MACHINE,	0.4,	0,		0.05,		0.4,	0,		0 },
-	{ ULTRON,			0.4,	0,		0,			0.4,	0.5,	0 }
+	//单位				攻击		资源		攻击距离		生命		位置		特殊加成		偏好
+	{ BIT_STREAM,		0.4,	0,		0.05,		0.4,	0,		0,			1},
+	{ VOLTAGE_SOURCE,	0.35,	0,		0.05,		0.45,	0,		0,			1},
+	{ CURRENT_SOURCE,	0.4,	0,		0,			0.4,	0.5,	0,			1},
+	{ ENIAC,			0.4,	0,		0.05,		0.4,	0,		0,			1},
+	{ PACKET,			0.4,	0,		0,			0.4,	0.5,	0,			1},
+	{ OPTICAL_FIBER,	0.35,	0,		0.05,		0.45,	0,		0,			1},
+	{ TURING_MACHINE,	0.4,	0,		0.05,		0.4,	0,		0,			1},
+	{ ULTRON,			0.4,	0,		0,			0.4,	0.5,	0,			1}
 };
 
 const float utility_weight2[Building_Type][_attribute] = {
-	//建筑				攻击		资源		攻击距离		生命		位置		特殊加成
-	{ __Base,			0,		0,		0,			0,		0,		0 },
-	{ Shannon,			0.1,	0,		0,			0.4,	0,		0 },
-	{ Thevenin,			0.1,	0,		0,			0.4,	0,		0 },
-	{ Norton,			0.1,	0,		0,			0.4,	0.3,	0 },
-	{ Von_Neumann,		0.1,	0,		0,			0.4,	0,		0 },
-	{ Berners_Lee,		0.1,	0,		0,			0.4,	0.33,	0 },
-	{ Kuen_Kao,			0.1,	0,		0,			0.4,	0,		0 },
-	{ Turing,			0.1,	0,		0,			0.4,	0,		0 },
-	{ Tony_Stark,		0.1,	0,		0,			0.4,	0.4,	0 },
-	{ Bool,				0.2,	0,		0.05,		0.5,	0,		0 },
-	{ Ohm,				0.4,	0,		0.05,		0.5,	0,		4 },//可以发动特效时，加成特殊*加成函数
-	{ Mole,				0.3,	0,		0.07,		0.5,	0,		2 },
-	{ Monte_Carlo,		0.3,	0,		0.05,		0.5,	0,		0 },
-	{ Larry_Roberts,	0.4,	0,		0.05,		0.5,	0,		3 },
-	{ Robert_Kahn,		0.4,	0,		0.05,		0.5,	0,		1 },
-	{ Musk,				0,		0,		0.2,		0.8,	0,		20 },
-	{ Hawkin,			0,		0,		0.3,		0.8,	0,		30 },
-	{ Programmer,		0,		1,		0,			0,		0.1,	0 }
+	//建筑				攻击		资源		攻击距离		生命		位置		特殊加成		偏好
+	{ __Base,			0,		0,		0,			0,		0,		0,			0},
+	{ Shannon,			0.1,	0,		0,			0.4,	0,		0,			1},
+	{ Thevenin,			0.1,	0,		0,			0.4,	0,		0,			1},
+	{ Norton,			0.1,	0,		0,			0.4,	0.3,	0,			1},
+	{ Von_Neumann,		0.1,	0,		0,			0.4,	0,		0,			1},
+	{ Berners_Lee,		0.1,	0,		0,			0.4,	0.33,	0,			1},
+	{ Kuen_Kao,			0.1,	0,		0,			0.4,	0,		0,			1},
+	{ Turing,			0.1,	0,		0,			0.4,	0,		0,			1},
+	{ Tony_Stark,		0.1,	0,		0,			0.4,	0.4,	0,			1},
+	{ Bool,				0.2,	0,		0.05,		0.5,	0,		0,			1},
+	{ Ohm,				0.4,	0,		0.05,		0.5,	0,		4,			1},//可以发动特效时，加成特殊*加成函数
+	{ Mole,				0.3,	0,		0.07,		0.5,	0,		2,			1},
+	{ Monte_Carlo,		0.3,	0,		0.05,		0.5,	0,		0,			1},
+	{ Larry_Roberts,	0.4,	0,		0.05,		0.5,	0,		3,			1},
+	{ Robert_Kahn,		0.4,	0,		0.05,		0.5,	0,		1,			1},
+	{ Musk,				0,		0,		0.2,		0.8,	0,		20,			1},
+	{ Hawkin,			0,		0,		0.3,		0.8,	0,		30,			1},
+	{ Programmer,		0,		1,		0,			0,		0.1,	0,			1}
 };
 
 
@@ -108,6 +109,10 @@ float calculate_utility(Soldier a) {
 }
 
 float calculate_utility(Building b) {
+
+}
+
+float calculate_special(BuildingType b) {
 
 }
 

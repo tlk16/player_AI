@@ -21,11 +21,11 @@ const int all_operation = 5;
 const int max_command_num = 50;	//单回合最多打指令数
 
 enum operation {			//各种操作
-	updateAGE,
-	construct,
-	sell,
-	maintain,
-	upgrade
+	_updateAGE,
+	_construct,
+	_sell,
+	_maintain,
+	_upgrade
 };
 
 enum map_identify {			//地图标识
@@ -58,7 +58,7 @@ enum _atrributes {			//评估函数包含的属性
 
 
 /***********************参数表************************/
-const float utility_weight1[Soldier_Type][_attribute] = {
+const double utility_weight1[Soldier_Type][_attribute] = {
 	//单位				攻击		资源		攻击距离		生命		位置		特殊加成		偏好
 	{ BIT_STREAM,		0.4,	0,		0.05,		0.4,	0,		0,			1},
 	{ VOLTAGE_SOURCE,	0.35,	0,		0.05,		0.45,	0,		0,			1},
@@ -70,7 +70,7 @@ const float utility_weight1[Soldier_Type][_attribute] = {
 	{ ULTRON,			0.4,	0,		0,			0.4,	0.5,	0,			1}
 };
 
-const float utility_weight2[Building_Type][_attribute] = {
+const double utility_weight2[Building_Type][_attribute] = {
 	//建筑				攻击		资源		攻击距离		生命		位置		特殊加成		偏好
 	{ __Base,			0,		0,		0,			0,		0,		0,			0},
 	{ Shannon,			0.1,	0,		0,			0.4,	0,		0,			1},
@@ -105,6 +105,8 @@ bool construct_legal(Position pos) {
 }
 
 float calculate_utility(Soldier a) {
+
+	
 	
 }
 
@@ -116,10 +118,27 @@ float calculate_special(BuildingType b) {
 
 }
 
+float calculate_attack(Soldier a, int flag) {}
+
+float calculate_attackRange(Soldier a, int flag) {}
+
+float calculate_attack(Building b, int flag) {}
+
+float calculate_hp(Building b, int flag) {}
+
+float calculate_hp(Soldier a, int flag) {}
+
+float calculate_attackRange(Building b, int flag) {}
+
 void f_player()
 {
-
-
+	if (state->turn == 0) {
+		for (int i = 0; i <= MAP_SIZE - 1; i++) {
+			for (int j = 0; j <= MAP_SIZE - 1; j++)
+				cout << ts19_map[i][j];
+		}
+		cout << endl;
+	}
 
 };
 
@@ -267,7 +286,7 @@ private:
 /***************************子节点声明结束*************************/
 
 
-void Node::tick(int f_power, int f_resource, int f_utility)
+/*void Node::tick(int f_power, int f_resource, int f_utility)
 {
 	//参数为父节点分配到的建造力、资源; 兄弟节点总效用 
 	max_power = f_power * utility / f_utility;
@@ -285,7 +304,7 @@ void Node::tick(int f_power, int f_resource, int f_utility)
 	else
 		execute();
 
-}//????
+}//????*/
 
 class Tree
 {
@@ -301,7 +320,7 @@ private:
 	//参数表
 	float threaten_buliding[all_buildings_num] = {};				//敌方各种类型单位的威胁值
 	float threaten_soldier[3][all_unit_num] = {};					//每条路上每种兵的威胁
-	float weight[all_operation] = {	1, 1, 0.1, 0.1, 0.9 };			//己方各种操作权重
+	//float weight[all_operation] = {	1, 1, 0.1, 0.1, 0.9 };			//己方各种操作权重
 	float building_weight[Building_Type] = {};						//各种建筑的权重，建筑标识参照api文件
 	float soldier_weight[Soldier_Type] = 
 	{ };															//对各种士兵的基础权重
@@ -357,9 +376,15 @@ void Tree::refresh_map() {	//更新地图
 		for (int index = 0; index <= 1; index++) {
 			for (auto iter = building_set_last[index].cbegin();
 				iter != building_set_last[index].cend(); iter++) {
-				if (find(building_set[index].begin(), building_set[index].end(), (*iter))
-					== building_set->end())	//该建筑不在现在回合内
-					map[iter->pos.x][iter->pos.y] = blank;
+				bool can_find = false;
+				for (auto iter2 = building_set[index].begin();
+					iter2 != building_set[index].end(); iter2++) {
+					if (iter->unit_id == iter2->unit_id) {
+						can_find = true;
+					}
+					if (can_find) break;
+				}
+				if (!can_find) map[iter->pos.x][iter->pos.y] = blank;
 			}
 		}
 		for (auto iter = building_set_last[ts19_flag].cbegin();

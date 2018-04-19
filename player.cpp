@@ -19,6 +19,8 @@ const int all_buildings_num = Building_Type;	//所有建筑数量
 const int all_unit_num = Soldier_Type;			//所有单位数量
 const int all_operation = 5;		
 const int max_command_num = 50;	//单回合最多打指令数
+Position my_base_pos;
+Position enemy_base_pos;
 
 enum operation {			//各种操作
 	_updateAGE,
@@ -97,38 +99,76 @@ const double utility_weight2[Building_Type][_attribute] = {
 /**************************各种辅助函数**********************/
 int abs(int x, int y) { return x > y ? x - y : y - x; }
 int dist(Position a, Position b) { return abs(a.x, b.x) + abs(a.y, b.y); }
-Position find_best(int building_type);
+Position find_best(int building_type);	//寻路函数
 
 
 bool construct_legal(Position pos) {
 
 }
 
+float calculate_special(BuildingType b,int flag) {
+
+}
+
+float calculate_attack(Soldier a) {
+	return (1 + 0.5*a.level) * OriginalSoldierAttribute[a.soldier_name][SOLDIER_ORIGINAL_ATTACK];
+}
+
+float calculate_attackRange(Soldier a) {
+	return (1 + 0.5*a.level) * OriginalSoldierAttribute[a.soldier_name][ATTACK_RANGE];
+}
+
+float calculate_attackRange(BuildingType b, int level) {
+	return (1 + 0.5*level) * OriginalBuildingAttribute[b][ORIGINAL_RANGE];
+}
+
+float calculate_attack(Building b) {
+	return (1 + 0.5*b.level)*OriginalBuildingAttribute[b.building_type][ORIGINAL_ATTACK];
+}
+
+float calculate_hp(Building b) {
+	return (1 + 0.5*b.level) * OriginalBuildingAttribute[b.building_type][ORIGINAL_HEAL];
+}
+
+float calculate_hp(Soldier a,int level) {//提供等级，用来计算为建造的兵的生命
+	return (1 + 0.5*level)* OriginalSoldierAttribute[a.soldier_name][SOLDIER_ORIGINAL_HEAL];
+}
+
+float calculate_attackRange(Building b) {
+	return (1 + 0.5*b.level) * OriginalBuildingAttribute[b.building_type][ORIGINAL_RANGE];
+}
+
+float calculate_CD(Building b) {
+	return (1 + 0.5*b.level) * OriginalBuildingAttribute[b.building_type][ORIGINAL_RANGE];
+}
+
+float calculate_resource_cost(BuildingType b, int level) {
+	return (1 + 0.5*level) * OriginalBuildingAttribute[b][ORIGINAL_RESOURCE];
+}
+
+float calculate_building_force(BuildingType b, int level) {
+	return (1 + 0.5*level) * OriginalBuildingAttribute[b][ORIGINAL_BUILDING_POINT];
+}
+
 float calculate_utility(Soldier a) {
-
+	int distance = (a.flag == ts19_flag) ? dist(a.pos, enemy_base_pos) : dist(a.pos, my_base_pos);
+	return	a.heal * utility_weight1[a.soldier_name][_hp] +
+			distance * utility_weight1[a.soldier_name][_pos] +
+			calculate_attack(a) * utility_weight1[a.soldier_name][_attack] +
+			calculate_attackRange(a) * utility_weight1[a.soldier_name][_range];
 	
 	
 }
 
-float calculate_utility(Building b) {
-
+float calculate_utility(Building b) {	//	对所有建筑都适用
+	int distance = (b.flag == ts19_flag) ? dist(b.pos, enemy_base_pos) : dist(b.pos, my_base_pos);
+	return b.heal * utility_weight2[b.building_type][_hp] +
+		calculate_attack(b) * utility_weight2[b.building_type][_attack] +
+		calculate_attackRange(b.building_type, b.level) * utility_weight2[b.building_type][_range] +
+		calculate_special(b.building_type,b.flag) * utility_weight2[b.building_type][_special];
 }
 
-float calculate_special(BuildingType b) {
 
-}
-
-float calculate_attack(Soldier a, int flag) {}
-
-float calculate_attackRange(Soldier a, int flag) {}
-
-float calculate_attack(Building b, int flag) {}
-
-float calculate_hp(Building b, int flag) {}
-
-float calculate_hp(Soldier a, int flag) {}
-
-float calculate_attackRange(Building b, int flag) {}
 
 void f_player()
 {
@@ -402,6 +442,8 @@ void Tree::refresh_map() {	//更新地图
 
 void Tree::init_map() {		//初始化地图并将路进行标号
 	if (state->turn == 0) {
+		my_base_pos = state->building[ts19_flag][0].pos;
+		enemy_base_pos = state->building[1 - ts19_flag][0].pos;
 		for (int i = 0; i <= MAP_SIZE - 1; i++) {
 			int road_count = 0;
 			for (int j = 0; j <= MAP_SIZE - 1; j++) {
@@ -473,3 +515,4 @@ void _Programmar::execute() {
 }
 void _Sell::execute() {
 }
+*/

@@ -1,10 +1,11 @@
-
 #include"communication.h"
 #include<vector>
+#include<priority_queue>
 #include<iostream>
 #include <algorithm>
 using std::cout;
 using std::endl;
+using std::priority_queue;
 using std::vector;
 using std::find;
 
@@ -13,16 +14,16 @@ extern std::vector<State* > all_state;
 extern int** ts19_map;
 extern bool ts19_flag;
 
-/**********************×Ô¶¨Òå±äÁ¿*************************/
-const int all_type = 28;						//×Ü¹²27ÖÖµ¥Î»Óë½¨Öş¼ÓÉÏµĞ·½Age
-const int all_buildings_num = Building_Type;	//ËùÓĞ½¨ÖşÊıÁ¿
-const int all_unit_num = Soldier_Type;			//ËùÓĞµ¥Î»ÊıÁ¿
+/**********************è‡ªå®šä¹‰å˜é‡*************************/
+const int all_type = 28;						//æ€»å…±27ç§å•ä½ä¸å»ºç­‘åŠ ä¸Šæ•Œæ–¹Age
+const int all_buildings_num = Building_Type;	//æ‰€æœ‰å»ºç­‘æ•°é‡
+const int all_unit_num = Soldier_Type;			//æ‰€æœ‰å•ä½æ•°é‡
 const int all_operation = 5;		
-const int max_command_num = 50;	//µ¥»ØºÏ×î¶à´òÖ¸ÁîÊı
+const int max_command_num = 50;	//å•å›åˆæœ€å¤šæ‰“æŒ‡ä»¤æ•°
 Position my_base_pos;
 Position enemy_base_pos;
 
-enum operation {			//¸÷ÖÖ²Ù×÷
+enum operation {			//å„ç§æ“ä½œ
 	_updateAGE,
 	_construct,
 	_sell,
@@ -30,18 +31,23 @@ enum operation {			//¸÷ÖÖ²Ù×÷
 	_upgrade
 };
 
-enum map_identify {			//µØÍ¼±êÊ¶
+enum map_identify {			//åœ°å›¾æ ‡è¯†
 	blank,
 	my_building,
 	en_building,
 	road1,
 	road2,
 	road3,
+	road4,
+	road5,
+	road6,
+	road7,
+	road8,
 	legal_area,
 	base
 };
 
-enum _atrributes {			//ÆÀ¹Àº¯Êı°üº¬µÄÊôĞÔ
+enum _atrributes {			//è¯„ä¼°å‡½æ•°åŒ…å«çš„å±æ€§
 	_type,
 	_attack,
 	_resource,
@@ -59,9 +65,9 @@ enum _atrributes {			//ÆÀ¹Àº¯Êı°üº¬µÄÊôĞÔ
 
 
 
-/***********************²ÎÊı±í************************/
+/***********************å‚æ•°è¡¨************************/
 const double utility_weight1[Soldier_Type][_attribute] = {
-	//µ¥Î»				¹¥»÷		×ÊÔ´		¹¥»÷¾àÀë		ÉúÃü		Î»ÖÃ		ÌØÊâ¼Ó³É		Æ«ºÃ
+	//å•ä½				æ”»å‡»		èµ„æº		æ”»å‡»è·ç¦»		ç”Ÿå‘½		ä½ç½®		ç‰¹æ®ŠåŠ æˆ		åå¥½
 	{ BIT_STREAM,		0.4,	0,		0.05,		0.4,	0,		0,			1},
 	{ VOLTAGE_SOURCE,	0.35,	0,		0.05,		0.45,	0,		0,			1},
 	{ CURRENT_SOURCE,	0.4,	0,		0,			0.4,	0.5,	0,			1},
@@ -73,7 +79,7 @@ const double utility_weight1[Soldier_Type][_attribute] = {
 };
 
 const double utility_weight2[Building_Type][_attribute] = {
-	//½¨Öş				¹¥»÷		×ÊÔ´		¹¥»÷¾àÀë		ÉúÃü		Î»ÖÃ		ÌØÊâ¼Ó³É		Æ«ºÃ
+	//å»ºç­‘				æ”»å‡»		èµ„æº		æ”»å‡»è·ç¦»		ç”Ÿå‘½		ä½ç½®		ç‰¹æ®ŠåŠ æˆ		åå¥½
 	{ __Base,			0,		0,		0,			0,		0,		0,			0},
 	{ Shannon,			0.1,	0,		0,			0.4,	0,		0,			1},
 	{ Thevenin,			0.1,	0,		0,			0.4,	0,		0,			1},
@@ -84,7 +90,7 @@ const double utility_weight2[Building_Type][_attribute] = {
 	{ Turing,			0.1,	0,		0,			0.4,	0,		0,			1},
 	{ Tony_Stark,		0.1,	0,		0,			0.4,	0.4,	0,			1},
 	{ Bool,				0.2,	0,		0.05,		0.5,	0,		0,			1},
-	{ Ohm,				0.4,	0,		0.05,		0.5,	0,		4,			1},//¿ÉÒÔ·¢¶¯ÌØĞ§Ê±£¬¼Ó³ÉÌØÊâ*¼Ó³Éº¯Êı
+	{ Ohm,				0.4,	0,		0.05,		0.5,	0,		4,			1},//å¯ä»¥å‘åŠ¨ç‰¹æ•ˆæ—¶ï¼ŒåŠ æˆç‰¹æ®Š*åŠ æˆå‡½æ•°
 	{ Mole,				0.3,	0,		0.07,		0.5,	0,		2,			1},
 	{ Monte_Carlo,		0.3,	0,		0.05,		0.5,	0,		0,			1},
 	{ Larry_Roberts,	0.4,	0,		0.05,		0.5,	0,		3,			1},
@@ -94,63 +100,71 @@ const double utility_weight2[Building_Type][_attribute] = {
 	{ Programmer,		0,		1,		0,			0,		0.1,	0,			1}
 };
 
+const double restrain_table[Building_Type][Building_Type] = {   //å»ºç­‘ç›¸å…‹è¡¨ï¼Œæœªä¿®æ”¹ 
+		//å»ºç­‘			__Base	Shannon	Thevenin    Norton	Von_Neumann		Berners_Lee	Kuen_Kao Turing  Tony_Stark  Bool  Ohm Mole Monte_Carlo  Larry_Roberts Robert_Kahn 	Musk Hawkin Programmer	
+	{ __Base,			0,		0,		0,			0,		0,		0,			0},
+	{ Shannon,			0.1,	0,		0,			0.4,	0,		0,			1},
+	{ Thevenin,			0.1,	0,		0,			0.4,	0,		0,			1},
+	{ Norton,			0.1,	0,		0,			0.4,	0.3,	0,			1},
+	{ Von_Neumann,		0.1,	0,		0,			0.4,	0,		0,			1},
+	{ Berners_Lee,		0.1,	0,		0,			0.4,	0.33,	0,			1},
+	{ Kuen_Kao,			0.1,	0,		0,			0.4,	0,		0,			1},
+	{ Turing,			0.1,	0,		0,			0.4,	0,		0,			1},
+	{ Tony_Stark,		0.1,	0,		0,			0.4,	0.4,	0,			1},
+	{ Bool,				0.2,	0,		0.05,		0.5,	0,		0,			1},
+	{ Ohm,				0.4,	0,		0.05,		0.5,	0,		4,			1},
+	{ Mole,				0.3,	0,		0.07,		0.5,	0,		2,			1},
+	{ Monte_Carlo,		0.3,	0,		0.05,		0.5,	0,		0,			1},
+	{ Larry_Roberts,	0.4,	0,		0.05,		0.5,	0,		3,			1},
+	{ Robert_Kahn,		0.4,	0,		0.05,		0.5,	0,		1,			1},
+	{ Musk,				0,		0,		0.2,		0.8,	0,		20,			1},
+	{ Hawkin,			0,		0,		0.3,		0.8,	0,		30,			1},
+	{ Programmer,		0,		1,		0,			0,		0.1,	0,			1}
+}
 
-
-/**************************¸÷ÖÖ¸¨Öúº¯Êı**********************/
+/**************************å„ç§è¾…åŠ©å‡½æ•°**********************/
 int abs(int x, int y) { return x > y ? x - y : y - x; }
 int dist(Position a, Position b) { return abs(a.x, b.x) + abs(a.y, b.y); }
-Position find_best(int building_type);	//Ñ°Â·º¯Êı
+Position find_best(int building_type);	//å¯»è·¯å‡½æ•°
 
 
-bool construct_legal(Position pos) {
+/*bool construct_legal(Position pos) {
 
 }
-
 float calculate_special(BuildingType b,int flag) {
 
-}
-
+}*/
 float calculate_attack(Soldier a) {
 	return (1 + 0.5*a.level) * OriginalSoldierAttribute[a.soldier_name][SOLDIER_ORIGINAL_ATTACK];
 }
-
 float calculate_attackRange(Soldier a) {
 	return (1 + 0.5*a.level) * OriginalSoldierAttribute[a.soldier_name][ATTACK_RANGE];
 }
-
 float calculate_attackRange(BuildingType b, int level) {
 	return (1 + 0.5*level) * OriginalBuildingAttribute[b][ORIGINAL_RANGE];
 }
-
 float calculate_attack(Building b) {
 	return (1 + 0.5*b.level)*OriginalBuildingAttribute[b.building_type][ORIGINAL_ATTACK];
 }
-
 float calculate_hp(Building b) {
 	return (1 + 0.5*b.level) * OriginalBuildingAttribute[b.building_type][ORIGINAL_HEAL];
 }
-
-float calculate_hp(Soldier a,int level) {//Ìá¹©µÈ¼¶£¬ÓÃÀ´¼ÆËãÎª½¨ÔìµÄ±øµÄÉúÃü
+float calculate_hp(Soldier a,int level) {//æä¾›ç­‰çº§ï¼Œç”¨æ¥è®¡ç®—ä¸ºå»ºé€ çš„å…µçš„ç”Ÿå‘½
 	return (1 + 0.5*level)* OriginalSoldierAttribute[a.soldier_name][SOLDIER_ORIGINAL_HEAL];
 }
-
 float calculate_attackRange(Building b) {
 	return (1 + 0.5*b.level) * OriginalBuildingAttribute[b.building_type][ORIGINAL_RANGE];
 }
-
 float calculate_CD(Building b) {
 	return (1 + 0.5*b.level) * OriginalBuildingAttribute[b.building_type][ORIGINAL_RANGE];
 }
-
 float calculate_resource_cost(BuildingType b, int level) {
 	return (1 + 0.5*level) * OriginalBuildingAttribute[b][ORIGINAL_RESOURCE];
 }
-
 float calculate_building_force(BuildingType b, int level) {
 	return (1 + 0.5*level) * OriginalBuildingAttribute[b][ORIGINAL_BUILDING_POINT];
 }
-
-float calculate_utility(Soldier a) {
+float calculate_utility(Soldier a) {   //è®¡ç®—ä¸€ä¸ªå·²ç»å­˜åœ¨çš„å…µçš„æ•ˆç”¨ 
 	int distance = (a.flag == ts19_flag) ? dist(a.pos, enemy_base_pos) : dist(a.pos, my_base_pos);
 	return	a.heal * utility_weight1[a.soldier_name][_hp] +
 			distance * utility_weight1[a.soldier_name][_pos] +
@@ -159,16 +173,13 @@ float calculate_utility(Soldier a) {
 	
 	
 }
-
-float calculate_utility(Building b) {	//	¶ÔËùÓĞ½¨Öş¶¼ÊÊÓÃ
+float calculate_utility(Building b) {	//	å¯¹æ‰€æœ‰å»ºç­‘éƒ½é€‚ç”¨
 	int distance = (b.flag == ts19_flag) ? dist(b.pos, enemy_base_pos) : dist(b.pos, my_base_pos);
 	return b.heal * utility_weight2[b.building_type][_hp] +
 		calculate_attack(b) * utility_weight2[b.building_type][_attack] +
 		calculate_attackRange(b.building_type, b.level) * utility_weight2[b.building_type][_range] +
 		calculate_special(b.building_type,b.flag) * utility_weight2[b.building_type][_special];
 }
-
-
 
 void f_player()
 {
@@ -183,15 +194,15 @@ void f_player()
 };
 
 
-/**************************ĞĞÎªÊ÷²¿·Ö****************/
+/**************************è¡Œä¸ºæ ‘éƒ¨åˆ†****************/
 
 class Node
 {
 public:
-	//º¯Êı³ÉÔ± 
+	//å‡½æ•°æˆå‘˜ 
 	Node();
 	~Node();
-	void tick(int f_power, int f_resource, int f_utility);   //²ÎÊıÎª¸¸½Úµã·ÖÅäµ½µÄ½¨ÔìÁ¦¡¢×ÊÔ´; ĞÖµÜ½Úµã×ÜĞ§ÓÃ T
+	void tick(int f_power, int f_resource, int f_utility);   //å‚æ•°ä¸ºçˆ¶èŠ‚ç‚¹åˆ†é…åˆ°çš„å»ºé€ åŠ›ã€èµ„æº; å…„å¼ŸèŠ‚ç‚¹æ€»æ•ˆç”¨ T
 	virtual int assess() {
 		std::cout << "assess" << endl;
 	}
@@ -199,84 +210,83 @@ public:
 		std::cout << "execute" << endl;
 	}
 
-	//Êı¾İ³ÉÔ± 
+	//æ•°æ®æˆå‘˜ 
 	std::vector<Node*> children;
-	int utility;     //×Ô¼ºµÄĞ§ÓÃÖµ£¬ÔÚµ÷ÓÃassessº¯Êıºó¸üĞÂ 
-	int max_power;   //·ÖÅäµ½µÄ½¨ÔìÁ¦ 
-	int max_resource;   //·ÖÅäµ½µÄ×ÊÔ´ 
+	int utility;     //è‡ªå·±çš„æ•ˆç”¨å€¼ï¼Œåœ¨è°ƒç”¨assesså‡½æ•°åæ›´æ–° 
+	int max_power;   //åˆ†é…åˆ°çš„å»ºé€ åŠ› 
+	int max_resource;   //åˆ†é…åˆ°çš„èµ„æº 
 
 };
 
-/*******************************¸÷ÖÖ×ÓÀà*******************************/
-class _UpgradeAGE :public Node			//Éı¼¶Ê±´ú£¬Ã¿»ØºÏÔ¤Áô×îµÍÈ¨ÖØµÄ×ÊÔ´£¬Èô¿ÉÉı¼¶£¬¾ÍÉı¼¶
+/*******************************å„ç§å­ç±»*******************************/
+class _UpgradeAGE :public Node			//å‡çº§æ—¶ä»£ï¼Œæ¯å›åˆé¢„ç•™æœ€ä½æƒé‡çš„èµ„æºï¼Œè‹¥å¯å‡çº§ï¼Œå°±å‡çº§
 {
 public:
 	int assess();
 	void execute();
 };
-class _Resource :public Node			//»ñÈ¡×ÊÔ´£¬Ò»°ã²»ĞèÒªÎ¬ĞŞ£¬µ«¹ıÊ±½¨ÖşĞèÒªÇåÀí»òÕßÉı¼¶£¬Ã¿»ØºÏ×ÊÔ´»ñÈ¡Á¿Òª¶¨Ò»¸öº¯ÊıÀ´ÅĞ¶Ï
-{										//¿¼ÂÇµĞ·½×ÊÔ´»ñÈ¡Á¿
+class _Resource :public Node			//è·å–èµ„æºï¼Œä¸€èˆ¬ä¸éœ€è¦ç»´ä¿®ï¼Œä½†è¿‡æ—¶å»ºç­‘éœ€è¦æ¸…ç†æˆ–è€…å‡çº§ï¼Œæ¯å›åˆèµ„æºè·å–é‡è¦å®šä¸€ä¸ªå‡½æ•°æ¥åˆ¤æ–­
+{										//è€ƒè™‘æ•Œæ–¹èµ„æºè·å–é‡
 public:
 	int assess();
 	void execute();
-	int evaluate();						//×ÊÔ´»ñÈ¡Ä¿±ê¹À¼Æ
+	int evaluate();						//èµ„æºè·å–ç›®æ ‡ä¼°è®¡
 };
-class _Development :public Node			//½¨Ôì ½ø¹¥»ò·ÀÊØ 
-										//¼ÆËã¹¥»÷ºÍ·ÀÓùĞèÒª´ïµ½µÄĞ§ÓÃÖµ£¬ÔÙ¼ÓÉÏÔ­ÓĞµÄ¹¥»÷·ÀÓùÆ«ºÃ£¬·ÖÅäÃ¿¸öĞĞÎªµÄÖµ
+class _Development :public Node			//å»ºé€  è¿›æ”»æˆ–é˜²å®ˆ 
+										//è®¡ç®—æ”»å‡»å’Œé˜²å¾¡éœ€è¦è¾¾åˆ°çš„æ•ˆç”¨å€¼ï¼Œå†åŠ ä¸ŠåŸæœ‰çš„æ”»å‡»é˜²å¾¡åå¥½ï¼Œåˆ†é…æ¯ä¸ªè¡Œä¸ºçš„å€¼
 {								
 public:
 	int assess();
 	void execute();
 };
 
-class _Attack :public Node				//¸ù¾İÈ¨Öµ±íÀ´£¬¸½´ø¿¼ÂÇ¶Ô·½µÄ·ÀÓù½¨ÖşĞ§ÓÃ±í£¬½øĞĞ¶ÔÓ¦²ßÂÔ
+class _Attack :public Node				//æ ¹æ®æƒå€¼è¡¨æ¥ï¼Œé™„å¸¦è€ƒè™‘å¯¹æ–¹çš„é˜²å¾¡å»ºç­‘æ•ˆç”¨è¡¨ï¼Œè¿›è¡Œå¯¹åº”ç­–ç•¥
 {
 public:
 	int assess();
 	void execute();
 };
-class _Defend :public Node				//¸ù¾İÃ¿ÌõÂ·Ã¿¸öµ¥Î»µÄÍşĞ²Öµ½øĞĞ·ÖÅä£¬°´ÕÕĞèÒª³Ì¶È·ÖÅä£¬Ä³Ğ©µ¥Î»ÓĞ¶ÔÓ¦¿ËÖÆµ¥Î»£¬ÕâĞ©µ¥Î»¼Ó´óÍ¶Èë£¬
-										//ÆäÓà¾Í°´ÕÕÈ¨Öµ±íÀ´
+class _Defend :public Node				//æ ¹æ®æ¯æ¡è·¯æ¯ä¸ªå•ä½çš„å¨èƒå€¼è¿›è¡Œåˆ†é…ï¼ŒæŒ‰ç…§éœ€è¦ç¨‹åº¦åˆ†é…ï¼ŒæŸäº›å•ä½æœ‰å¯¹åº”å…‹åˆ¶å•ä½ï¼Œè¿™äº›å•ä½åŠ å¤§æŠ•å…¥ï¼Œ
+										//å…¶ä½™å°±æŒ‰ç…§æƒå€¼è¡¨æ¥
 {
 public:
 	int assess();
 	void execute();
-	float table[8] = {};				//·ÀÓù½¨ÖşÈ¨Öµ±í
-	void fresh_table();					//·ÀÓù½¨ÖşÈ¨Öµ¸üĞÂ£¬²»ÄÜ½¨µÄ½¨ÖşÈ¨ÖµÎª0£¬ÌØÊâ¿ËÖÆ½¨ÖşÈ¨ÖµÉÏÉı£¬ÆäÓà¼òÖ±°´Ğ§ÓÃÖµÅÅĞò£¬×ÜºÍ¹éÒ»»¯
+	float table[8] = {};				//é˜²å¾¡å»ºç­‘æƒå€¼è¡¨
+	void fresh_table();					//é˜²å¾¡å»ºç­‘æƒå€¼æ›´æ–°ï¼Œä¸èƒ½å»ºçš„å»ºç­‘æƒå€¼ä¸º0ï¼Œç‰¹æ®Šå…‹åˆ¶å»ºç­‘æƒå€¼ä¸Šå‡ï¼Œå…¶ä½™ç®€ç›´æŒ‰æ•ˆç”¨å€¼æ’åºï¼Œæ€»å’Œå½’ä¸€åŒ–
 };
-class _Programmar :public Node			//ÂëÅ©µÄÎ¬ĞŞ£¬Éı¼¶£¬½¨Ôì£¬µ¥¶ÀÓĞ¸öĞ§ÓÃº¯Êı£¬¸ù¾İÃ¿»ØºÏ»ñµÃµÄĞèÒªĞ§ÓÃÖµ½øĞĞ
-{										//¸Ğ¾õÂëÅ©²»ĞèÒª¿¼ÂÇÌ«¸´ÔÓ£¬½¨ÔìÊ±Éú²úµ½Ô¶Ò»µãµÄÎ»ÖÃ¾ÍĞĞ£¬»ù±¾²»ĞèÒª¿¼ÂÇÎ¬ĞŞ
+class _Programmar :public Node			//ç å†œçš„ç»´ä¿®ï¼Œå‡çº§ï¼Œå»ºé€ ï¼Œå•ç‹¬æœ‰ä¸ªæ•ˆç”¨å‡½æ•°ï¼Œæ ¹æ®æ¯å›åˆè·å¾—çš„éœ€è¦æ•ˆç”¨å€¼è¿›è¡Œ
+{										//æ„Ÿè§‰ç å†œä¸éœ€è¦è€ƒè™‘å¤ªå¤æ‚ï¼Œå»ºé€ æ—¶ç”Ÿäº§åˆ°è¿œä¸€ç‚¹çš„ä½ç½®å°±è¡Œï¼ŒåŸºæœ¬ä¸éœ€è¦è€ƒè™‘ç»´ä¿®
 public:
 	int assess();
 	void execute();
 };
-class _Sell :public Node				//Í¨¹ıÂô·¿×Ó»ñÈ¡×ÊÔ´
+class _Sell :public Node				//é€šè¿‡å–æˆ¿å­è·å–èµ„æº
 {
 public:
 	int assess();
 	void execute();
-	vector<Building> sell_list();		//ÈôĞ§ÓÃĞ¡ÓÚÄ³Ò»¸öãĞÖµ£¨¿ÉÒÔ¶¨ÎªÆ½¾ùÖµ75%£©£¬ÔòÌÔÌ­£¬ÓĞÊıÁ¿ÉÏÏŞ
-										//Ë³±ãÔÙ¿¼ÂÇµ±½¨ÖşÊıÁ¿½Ï¶àÊ±£¬³öÊÛĞ§ÓÃ½ÏµÍµÄÒ»Åú½¨Öş
+	vector<Building> sell_list();		//è‹¥æ•ˆç”¨å°äºæŸä¸€ä¸ªé˜ˆå€¼ï¼ˆå¯ä»¥å®šä¸ºå¹³å‡å€¼75%ï¼‰ï¼Œåˆ™æ·˜æ±°ï¼Œæœ‰æ•°é‡ä¸Šé™
+										//é¡ºä¾¿å†è€ƒè™‘å½“å»ºç­‘æ•°é‡è¾ƒå¤šæ—¶ï¼Œå‡ºå”®æ•ˆç”¨è¾ƒä½çš„ä¸€æ‰¹å»ºç­‘
 };
 
-class _BuildingNode	:public Node		//´ú±íĞĞÎªÊ÷ÖĞ½¨Öş½Úµã²¿·Ö
-{										//¾ö²ßËµÃ÷£º¼ÙÉèÓĞÆÀ¹ÀĞ§ÓÃµÄº¯Êı£¬¸Ã½ÚµãĞèÒª´ïµ½Ä³Ğ§ÓÃÖµ£¬
-										//´ËÍâ»¹ÓĞ³É±¾ÏŞÖÆÊı
-										//±éÀúÈ«²¿½¨ÖşµÃµ½ Ã¿¸ö½¨Öş£¬Ã¿ÖÖ²Ù×÷(f,c)
-										//Ä¿±ê£ºÑ¡È¡Ä³½¨ÖşÏÂµÄÄ³²Ù×÷£¬Ê¹µÃsum(ci)×îĞ¡ÇÒÔÚ³É±¾Ô¤ËãÄÚ£¬´ïµ½Ğ§ÓÃ×î´ó»¯£»
-										//¿ÉÒÔÏÈĞ´¸ö¼ò»¯°æ
+class _BuildingNode	:public Node		//ä»£è¡¨è¡Œä¸ºæ ‘ä¸­å»ºç­‘èŠ‚ç‚¹éƒ¨åˆ†
+{										//å†³ç­–è¯´æ˜ï¼šå‡è®¾æœ‰è¯„ä¼°æ•ˆç”¨çš„å‡½æ•°ï¼Œè¯¥èŠ‚ç‚¹éœ€è¦è¾¾åˆ°æŸæ•ˆç”¨å€¼ï¼Œ
+										//æ­¤å¤–è¿˜æœ‰æˆæœ¬é™åˆ¶æ•°
+										//éå†å…¨éƒ¨å»ºç­‘å¾—åˆ° æ¯ä¸ªå»ºç­‘ï¼Œæ¯ç§æ“ä½œ(f,c)
+										//ç›®æ ‡ï¼šé€‰å–æŸå»ºç­‘ä¸‹çš„æŸæ“ä½œï¼Œä½¿å¾—sum(ci)æœ€å°ä¸”åœ¨æˆæœ¬é¢„ç®—å†…ï¼Œè¾¾åˆ°æ•ˆç”¨æœ€å¤§åŒ–ï¼›
+										//å¯ä»¥å…ˆå†™ä¸ªç®€åŒ–ç‰ˆ
 
 public:
 	int assess();
 	void execute();
-
-	void attribute();				//¾ö²ßÈçºÎ·ÖÅä½¨Öş£¬°´ÕûÊı·ÖÅäµ½ÏÂÃæµÄ½Úµã£¬ÓÉ³É±¾¾ö¶¨
+	void attribute();				//å†³ç­–å¦‚ä½•åˆ†é…å»ºç­‘ï¼ŒæŒ‰æ•´æ•°åˆ†é…åˆ°ä¸‹é¢çš„èŠ‚ç‚¹ï¼Œç”±æˆæœ¬å†³å®š
 
 	BuildingType buildingtype;
 	_BuildingNode(BuildingType b) :buildingtype(b) {}
 
 };
-/*class _BuildingMethod : public Node {	//¾ö¶¨ÒÔºÎÖÖ·½Ê½¼ÓÇ¿½¨Öş
+/*class _BuildingMethod : public Node {	//å†³å®šä»¥ä½•ç§æ–¹å¼åŠ å¼ºå»ºç­‘
 public:
 	int assess();
 	void execute();
@@ -292,7 +302,7 @@ public:
 	_Construct(BuildingType b) :buildingtype(b) {}
 
 	void fresh_num(int num) { construct_num = (num >= 0) ? num : 0; }
-	Position find_best_place();			//Ñ°ÕÒµ½×î¼ÑµÄÎ»ÖÃÀ´½¨Ôì
+	vector<Position> find_best_place();			//å¯»æ‰¾åˆ°æœ€ä½³çš„ä½ç½®æ¥å»ºé€ 
 private:
 	int construct_num = 0;
 };
@@ -306,7 +316,7 @@ public:
 	_Maintain(BuildingType b) :buildingtype(b) {}	
 
 	void fresh_num(int num) { maintain_num = (num >= 0) ? num : 0; }
-	vector<Building> min_cost();	//·µ»ØÎ¬ĞŞ·ÑÓÃ×îÉÙµÄ£¬ÏŞ¶¨ÊıÁ¿µÄ½¨Öş£¬ÇĞ¼ÇÃ¿»ØºÏÎ¬ĞŞ×î¶à20%µÄÑªÁ¿
+	vector<Building> min_cost();	//è¿”å›ç»´ä¿®è´¹ç”¨æœ€å°‘çš„ï¼Œé™å®šæ•°é‡çš„å»ºç­‘ï¼Œåˆ‡è®°æ¯å›åˆç»´ä¿®æœ€å¤š20%çš„è¡€é‡
 private:
 	int maintain_num = 0;
 };
@@ -319,23 +329,23 @@ public:
 	_Upgrade(BuildingType b) :buildingtype(b) {}
 
 	void fresh_num(int num) { upgrade_num = (num >= 0) ? num : 0; }
-	vector<Building> min_cost();		//·µ»ØÉı¼¶·ÑÓÃ×îĞ¡ÇÒ×îÓÅµÄ½¨Öş
+	vector<Building> min_cost();		//è¿”å›å‡çº§è´¹ç”¨æœ€å°ä¸”æœ€ä¼˜çš„å»ºç­‘
 private:
 	int upgrade_num = 0;
 };
-/***************************×Ó½ÚµãÉùÃ÷½áÊø*************************/
+/***************************å­èŠ‚ç‚¹å£°æ˜ç»“æŸ*************************/
 
 
-/*void Node::tick(int f_power, int f_resource, int f_utility)
+void Node::tick(int f_power, int f_resource, int f_utility)
 {
-	//²ÎÊıÎª¸¸½Úµã·ÖÅäµ½µÄ½¨ÔìÁ¦¡¢×ÊÔ´; ĞÖµÜ½Úµã×ÜĞ§ÓÃ 
+	//å‚æ•°ä¸ºçˆ¶èŠ‚ç‚¹åˆ†é…åˆ°çš„å»ºé€ åŠ›ã€èµ„æº; å…„å¼ŸèŠ‚ç‚¹æ€»æ•ˆç”¨ 
 	max_power = f_power * utility / f_utility;
-	max_resource = f_resource * utility / f_utility;  // Ó¦¸ÃÓĞ¸üºÃµÄ·ÖÅä·½°¸ 
+	max_resource = f_resource * utility / f_utility;  // åº”è¯¥æœ‰æ›´å¥½çš„åˆ†é…æ–¹æ¡ˆ 
 	if (this->children.size() != 0)
 	{
 		int all_utility = 0;
 		for (int i = 0; i < this->children.size(); i++){
-			all_utility += children[i]->assess();
+			all_utility += children[i]->assess();    //è°ƒç”¨assessçš„æ—¶å€™éœ€è¦è®¡ç®—å¹¶ä¿å­˜èŠ‚ç‚¹çš„utility 
 		}
 		for (int i = 0; i< this->children.size(); i++){
 			children[i]->tick(max_power, max_resource, all_utility);
@@ -343,53 +353,59 @@ private:
 	}
 	else
 		execute();
-
-}//????*/
+}
 
 class Tree
 {
 public:
 	Node * root;
-	Tree();	     //½¨Ê÷£¬ÔÚinitÖĞµ÷ÓÃ 
-	void evaluate();		//ÆÀ¹À£¬²¢¶ÔµÚÒ»²ã×ö³ö·ÖÅä
-	void init_map();		//³õÊ¼»¯µØÍ¼
-	void refresh_map();		//Ë¢ĞÂ¼º·½µØÍ¼
-	void refresh_unit();	//Ë¢ĞÂµ¥Î»ÊıÁ¿ĞÅÏ¢
-	void tranverse();		//±éÀú
+	Tree();	     //å»ºæ ‘ï¼Œåœ¨initä¸­è°ƒç”¨ 
+	void evaluate();		//è¯„ä¼°ï¼Œå¹¶å¯¹ç¬¬ä¸€å±‚åšå‡ºåˆ†é…
+	void init_map();		//åˆå§‹åŒ–åœ°å›¾
+	void refresh_map();		//åˆ·æ–°å·±æ–¹åœ°å›¾
+	void refresh_unit();	//åˆ·æ–°å•ä½æ•°é‡ä¿¡æ¯
+	void tranverse();		//éå†
 private:
-	//²ÎÊı±í
-	float threaten_buliding[all_buildings_num] = {};				//µĞ·½¸÷ÖÖÀàĞÍµ¥Î»µÄÍşĞ²Öµ
-	float threaten_soldier[3][all_unit_num] = {};					//Ã¿ÌõÂ·ÉÏÃ¿ÖÖ±øµÄÍşĞ²
-	//float weight[all_operation] = {	1, 1, 0.1, 0.1, 0.9 };			//¼º·½¸÷ÖÖ²Ù×÷È¨ÖØ
-	float building_weight[Building_Type] = {};						//¸÷ÖÖ½¨ÖşµÄÈ¨ÖØ£¬½¨Öş±êÊ¶²ÎÕÕapiÎÄ¼ş
+	//å‚æ•°è¡¨
+    int road_num = 3; //éœ€è¦åœ¨initä¸­è®¡ç®— 
+	float threaten_buliding[all_buildings_num] = {};				//æ•Œæ–¹å„ç§ç±»å‹å•ä½çš„å¨èƒå€¼
+	float threaten_soldier[road_num][all_unit_num] = {};					//æ¯æ¡è·¯ä¸Šæ¯ç§å…µçš„å¨èƒ
+	//float weight[all_operation] = {	1, 1, 0.1, 0.1, 0.9 };			//å·±æ–¹å„ç§æ“ä½œæƒé‡
+	float building_weight[Building_Type] = {};						//å„ç§å»ºç­‘çš„æƒé‡ï¼Œå»ºç­‘æ ‡è¯†å‚ç…§apiæ–‡ä»¶
 	float soldier_weight[Soldier_Type] = 
-	{ };															//¶Ô¸÷ÖÖÊ¿±øµÄ»ù´¡È¨ÖØ
-	float evaluate_table[3] = {};									//¶ÔÈı¸ö½Úµã×ö³öÆÀ¹À
-	//Ã¿»ØºÏĞè¸üĞÂµÄĞÅÏ¢
-	int map[MAP_SIZE][MAP_SIZE];							//×Ô¶¨Òåmap£¬ÏÔÊ¾Â·Óë½¨Öş
-	float ensoldier_num[3][all_unit_num] = {};				//Ã¿ÌõÂ·ÉÏµÄµĞ·½±øÁ¦
+	{ };															//å¯¹å„ç§å£«å…µçš„åŸºç¡€æƒé‡
+	float evaluate_table[3] = {};									//å¯¹ä¸‰ä¸ªèŠ‚ç‚¹åšå‡ºè¯„ä¼°
+	//æ¯å›åˆéœ€æ›´æ–°çš„ä¿¡æ¯
+	int map[MAP_SIZE][MAP_SIZE];							//è‡ªå®šä¹‰mapï¼Œæ˜¾ç¤ºè·¯ä¸å»ºç­‘
+	float mysoldier_heal[road_num][all_unit_num] = {};           //æ¯æ¡è·¯ä¸Šçš„æˆ‘æ–¹è¡€é‡
+	float mysoldier_heal_last[road_num][all_unit_num] = {};           //æ¯æ¡è·¯ä¸Šçš„æˆ‘æ–¹è¡€é‡_ä¸Šå›åˆ 
+	float ensoldier_num[road_num][all_unit_num] = {};				//æ¯æ¡è·¯ä¸Šçš„æ•Œæ–¹å…µåŠ›
+	float enbuilding_num[road_num][all_buildings_num] = {};           //æ¯æ¡è·¯é™„è¿‘çš„æ•Œæ–¹å»ºç­‘ 
+	int lim_building_num;    //å»ºç­‘æ•°ç›®ä¸Šé™ï¼Œåˆå§‹å’Œå‡çº§æ—¶ç»´æŠ¤ 
+	int lim_building_force;   //å»ºé€ åŠ›ä¸Šé™ ï¼Œåˆå§‹å’Œå‡çº§æ—¶ç»´æŠ¤ 
+	int map2[MAP_SIZE][MAP_SIZE]; //ç»´æŠ¤åˆ°è·¯çš„è·ç¦»ï¼Œå‡å¦‚æœ€è¿‘çš„æ˜¯road_n, è·ç¦»ä¸º15ï¼Œåˆ™è¡¨ç¤ºä¸º n15 , åœ°å›¾å°šæœªå®ç° 
 };
 
 Tree::Tree()
 {
 	root = new Node();
 
-	//µÚÒ»²ã 
+	//ç¬¬ä¸€å±‚ 
 	root->children.push_back(new _UpgradeAGE());
 	root->children.push_back(new _Development());
 	root->children.push_back(new _Resource());
 
-	//µÚ¶ş²ã
+	//ç¬¬äºŒå±‚
 	root->children[1]->children.push_back(new _Attack());
 	root->children[1]->children.push_back(new _Defend());
 	root->children[2]->children.push_back(new _Programmar());
 	root->children[2]->children.push_back(new _Sell());
 
-	//µÚÈı²ã µÚÒ»ĞĞÎªattackµÄº¢×Ó£¬µÚ¶şĞĞÎªdefendµÄº¢×Ó£¬¾ö¶¨½¨ÖşÖÖÀà 
+	//ç¬¬ä¸‰å±‚ ç¬¬ä¸€è¡Œä¸ºattackçš„å­©å­ï¼Œç¬¬äºŒè¡Œä¸ºdefendçš„å­©å­ï¼Œå†³å®šå»ºç­‘ç§ç±» 
 	for (int i = 1; i < 8; i++)    root->children[1]->children[0]->children.push_back(new _BuildingNode(BuildingType(i)));
 	for (int i = 9; i < 16; i++)   root->children[1]->children[1]->children.push_back(new _BuildingNode(BuildingType(i)));
 
-	//µÚËÄ²ã  Ç°ÈıĞĞÎª½ø¹¥½¨Öş£¬ºóÈıĞĞÎª·ÀÊØ½¨Öş£¬¾ö¶¨ÊÇÉı¼¶¡¢Î¬ĞŞ»¹ÊÇ½¨Ôì 
+	//ç¬¬å››å±‚  å‰ä¸‰è¡Œä¸ºè¿›æ”»å»ºç­‘ï¼Œåä¸‰è¡Œä¸ºé˜²å®ˆå»ºç­‘ï¼Œå†³å®šæ˜¯å‡çº§ã€ç»´ä¿®è¿˜æ˜¯å»ºé€  
 	for (int i = 0; i < 7; i++)
 		for (int j = 0; j <= 1; j++) {
 			vector<Node*> temp = root->children[1]->children[j]->children[i]->children;
@@ -403,15 +419,17 @@ Tree::Tree()
 void Tree::tranverse() {
 	refresh_map();
 	refresh_unit();
-	evaluate();									//·ÖÅäºÃµÚÒ»²ãÖµ£¬ÔÚÃ¿¸ö×Ó½ÚµãµÄexecuteº¯ÊıÎ²Ğ´³ö¶ÔÏÂÒ»²ã×Ó½ÚµãµÄµİ¹é²Ù×÷
-	for (int i = 0; i <= 2; i++) {
+	evaluate();									
+	/*for (int i = 0; i <= 2; i++) {
 		this->root->children[i]->execute();
-	}
+	}*/
+	root->utility = 1;
+    root->tick(60+40*state->age[ts19_flag], state->resource[ts19_flag], root->utility)
 }
 
-void Tree::refresh_map() {	//¸üĞÂµØÍ¼
-	if (state->turn >= 1) {
-		vector<Building>* building_set = state->building;
+void Tree::refresh_map() {	//æ›´æ–°åœ°å›¾
+	if (state->turn >= 1) {   //ç›´æ¥å…¨éƒ¨è®¾blank? 
+		vector<Building>* building_set = state->building;     //æŠŠä¸€ä¸ªæ•°ç»„èµ‹å€¼ç»™ä¸€ä¸ªvector? 
 		vector<Building>* building_set_last = all_state.back()->building;
 		for (int index = 0; index <= 1; index++) {
 			for (auto iter = building_set_last[index].cbegin();
@@ -427,10 +445,28 @@ void Tree::refresh_map() {	//¸üĞÂµØÍ¼
 				if (!can_find) map[iter->pos.x][iter->pos.y] = blank;
 			}
 		}
+		//æœ‰é—®é¢˜ï¼Œå°šæœªè€ƒè™‘ä¸»å»ºç­‘ 
 		for (auto iter = building_set_last[ts19_flag].cbegin();
 			iter != building_set_last[ts19_flag].cend();
 			iter++) {
 			map[iter->pos.x][iter->pos.y] = my_building;
+			for(int i=-8; i<=8; j++)                 //åœ¨è‡ªå·±å»ºç­‘å‘¨å›´ç¬¬ä¸€è½®éå†ï¼Œå°†8ä»¥å†…è®¾ä¸ºå¯å»ºé€ åŒºåŸŸ 
+			    for(int j=-8; j<=8; j++)
+			        if((i==0 && j==0) || outofRange(iter->pos.x + i,iter->pos.y + j))    //outograngeè¿˜æ²¡å†™ 
+			            break;
+			        else
+			            map[iter->pos.x + i][iter->pos.y + j] = legal_area;
+		}
+		for (auto iter = building_set_last[ts19_flag].cbegin();
+			iter != building_set_last[ts19_flag].cend();
+			iter++) {
+			map[iter->pos.x][iter->pos.y] = my_building;
+			for(int i=-2; i<=2; j++)                 //åœ¨è‡ªå·±å»ºç­‘å‘¨å›´ç¬¬äºŒè½®éå†ï¼Œå°†2ä»¥å†…è®¾ä¸ºä¸å¯å»ºé€ åŒºåŸŸ 
+			    for(int j=-2; j<=2; j++)
+			            if((i==0 && j==0) || outofRange(iter->pos.x + i,iter->pos.y + j)) 
+			                break;
+			            else
+			                map[iter->pos.x + i][iter->pos.y + j] = blank;
 		}
 		for (auto iter = building_set_last[1 - ts19_flag].cbegin();
 			iter != building_set_last[1 - ts19_flag].cend();
@@ -440,18 +476,20 @@ void Tree::refresh_map() {	//¸üĞÂµØÍ¼
 	}
 }
 
-void Tree::init_map() {		//³õÊ¼»¯µØÍ¼²¢½«Â·½øĞĞ±êºÅ
-	if (state->turn == 0) {
+void Tree::init_map() {		//åˆå§‹åŒ–åœ°å›¾å¹¶å°†è·¯è¿›è¡Œæ ‡å· ,ç¬¬0å›åˆä¸éœ€è¦å¯¹å»ºç­‘æ ‡è®°å—ï¼Ÿ 
+	if (state->turn == 0) {    //å¦‚æœè·¯ä¸å¾€å›æ‹çš„è¯ï¼Œä¼¼ä¹å¯ä»¥ç®€å•åœ°è§£å†³ï¼Œå¦‚æœå¾€å›æ‹æˆ‘å°±ä¸ä¼šäº† 
 		my_base_pos = state->building[ts19_flag][0].pos;
-		enemy_base_pos = state->building[1 - ts19_flag][0].pos;
-		for (int i = 0; i <= MAP_SIZE - 1; i++) {
+		enemy_base_pos = state->building[1 - ts19_flag][0].pos; 
+		//å…ˆå¤„ç†å’Œå·¦è¾¹ä¸»åŸºåœ°ä¸åœ¨åŒä¸€è¡Œçš„è·¯ 
+		for (int i = 7; i <= MAP_SIZE - 1; i++) {      //ä¸ºå•¥æ˜¯ã€Š=mapsize-1? 
 			int road_count = 0;
 			for (int j = 0; j <= MAP_SIZE - 1; j++) {
 				switch (ts19_map[i][j])
 				{
 				case 1: {
 					map[i][j] = road1 + road_count;
-					road_count++;
+					if(j+1 != MAP_SIZE && map[i][j+1] != 1)  //è€ƒè™‘åˆ°åŒä¸€æ¡è·¯å¯èƒ½æ¨ªåœ¨åŒä¸€è¡Œä¸­çš„æƒ…å†µ 
+					    road_count++;
 				}break;
 				case 2: {
 					map[i][j] = base;
@@ -464,17 +502,61 @@ void Tree::init_map() {		//³õÊ¼»¯µØÍ¼²¢½«Â·½øĞĞ±êºÅ
 				}
 			}
 		}
+		//å†å¤„ç†å’Œå·¦è¾¹ä¸»åŸºåœ°åœ¨åŒä¸€è¡Œçš„æƒ…å†µ 
+		{
+			int road_count = 0;  int i = 7
+		    for(int j=0; j<=7; j++) if(ts19_map[i][j] == 1) road_count += 1;
+			for (int i = 0; i < 7; i++) {      
+			    for (int j = 0; j <= MAP_SIZE - 1; j++){
+			    	switch (ts19_map[i][j])
+				{
+				    case 1: {
+					    map[i][j] = road1 + road_count;
+					    if(j+1 != MAP_SIZE && map[i][j+1] != 1)  //è€ƒè™‘åˆ°åŒä¸€æ¡è·¯å¯èƒ½æ¨ªåœ¨åŒä¸€è¡Œä¸­çš„æƒ…å†µ 
+					        road_count++;
+				    }break;
+				    case 2: {
+					    map[i][j] = base;
+			    	}break;
+			     	case 0: {
+					    map[i][j] = blank;
+			    	}break;
+			    	default:
+				    	break;
+				}
+			}
+	    }
+		}
+	 
 	}
 }
 
-void Tree::refresh_unit() {		//½«µĞ·½unitÍ³¼Æ±íÇåÁã£¬²¢ÖØĞÂÍ³¼Æ
-	for (int i = 0; i <= 2; i++) 
+void Tree::refresh_unit() {		//å°†æ•Œæ–¹unitç»Ÿè®¡è¡¨æ¸…é›¶ï¼Œå¹¶é‡æ–°ç»Ÿè®¡
+	for (int i = 0; i <= road_num; i++) 
 		for (int j = 0; j <= all_unit_num - 1; j++) {
 			ensoldier_num[i][j] = 0;
 		}
-	vector<Soldier>& soldier_set = state->soldier[1 - ts19_flag];
-	for (auto iter = soldier_set.cbegin(); iter != soldier_set.cend(); iter++) {
+	vector<Soldier>& soldier_set1 = state->soldier[1 - ts19_flag];
+	for (auto iter = soldier_set1.cbegin(); iter != soldier_set1.cend(); iter++) {
 		ensoldier_num[map[iter->pos.x][iter->pos.y] - road1][iter->soldier_name] ++;
+	}
+	                           //å°†æˆ‘æ–¹unitç»Ÿè®¡è¡¨æ¸…é›¶ï¼Œå¹¶é‡æ–°ç»Ÿè®¡
+	for (int i = 0; i <= roda_num; i++) 
+		for (int j = 0; j <= all_unit_num - 1; j++) {
+			mysoldier_heal[i][j] = 0;
+		}
+	vector<Soldier>& soldier_set2 = state->soldier[ts19_flag];
+	for (auto iter = soldier_set2.cbegin(); iter != soldier_set2.cend(); iter++) {
+		mysoldier_heal[map[iter->pos.x][iter->pos.y] - road1][iter->soldier_name] += iter->heal;
+	}
+	
+	for (int i = 0; i <= roda_num; i++)   //å°†æˆ‘æ–¹ä¸Šå›åˆunitè¡€é‡ç»Ÿè®¡è¡¨æ¸…é›¶å¹¶é‡æ–°ç»Ÿè®¡ 
+		for (int j = 0; j <= all_unit_num - 1; j++) {
+			mysoldier_heal_last[i][j] = 0;
+		}
+	vector<Soldier>& soldier_set3 = all_state.back()->soldier[ts19_flag]
+	for (auto iter = soldier_set3.cbegin(); iter != soldier_set3.cend(); iter++) {
+		mysoldier_heal_last[map[iter->pos.x][iter->pos.y] - road1][iter->soldier_name] += iter->heal;
 	}
 }
 
@@ -482,32 +564,91 @@ void Tree::refresh_unit() {		//½«µĞ·½unitÍ³¼Æ±íÇåÁã£¬²¢ÖØĞÂÍ³¼Æ
 
 
 
-/*************************************×Ó½Úµã·½·¨***************************/
+/*************************************å­èŠ‚ç‚¹æ–¹æ³•***************************/
 int _UpgradeAGE::assess() {
-
+    int backward = state->age[1 - ts19_flag] > state->age[ts19_flag]? 10:1;  //ç­‰çº§è½åäºæ•Œäººæ—¶å¤§åŠ›è¿½èµ¶ï¼Œéœ€è¦è°ƒèŠ‚ 
+    int en_re =  state->resource[1 - ts19_flag].resource;   
+    this->utility = en_re + backward;
+    return utility;
 }
 int _Development::assess() {
+	
 }
 int _Resource::assess() {
 }
 int _Attack::assess() {
+	int w1 = 1;  //æ•Œæ–¹ä¸»åŸºåœ°æ‰è¡€æƒé‡ 
+	int utility = w1*(calculate_hp(state->building[1-ts19_flag][0]) - state->building[1-ts19_flag][0].heal);
+	return ultility;
 }
 int _Defend::assess() {
-
+    int w1 = 1;  //ä¸»åŸºåœ°æ‰è¡€æƒé‡ 
+	int utility = w1*(calculate_hp(state->building[ts19_flag][0]) - state->building[ts19_flag][0].heal);
+	return ultility;
 }
 int _BuildingNode::assess() {
+	//éå†æ•Œæ–¹å»ºç­‘åˆ—è¡¨ 
+    vector<Building>& building_set = state->building[1 - ts19_flag];
+	int  num[Building_Type] = {};  //ä¿å­˜æ•Œæ–¹å„ç§å»ºç­‘æ•°é‡ ï¼Œè¯è¯´è¿™ä¸€æ­¥å¯ä»¥åœ¨refreshåš 
+    for (auto iter = building_set.cbegin(); iter != building_set.cend(); iter++) {
+	    num[int(iter->building_type)] ++;
+	}
+	int restrain = 0; //è¡¨ç¤ºæˆ‘æ–¹å»ºç­‘å¯¹æ•Œæ–¹çš„å…‹åˆ¶ç¨‹åº¦
+	for(int i=0; i<Building_Type; i++)
+	{
+		restrain += num[i]*restrain_table[int(this->BuildingType)][i];
+	 } 
+	 int w1=1, w2=1;
+	 this->utility = w1*restrain + w2*calculate_utility(this->BuildingType);  //å…‹åˆ¶èƒ½åŠ›å’Œå»ºç­‘æœ¬èº«æ•ˆç”¨å€¼åŠ æƒå¾—åˆ°æœ€ç»ˆæ•ˆç”¨å€¼ 
+	 return utility;
 }
 
 int _Programmar::assess() {
 }
 int _Sell::assess() {
 }
-
+int _Construct::assess(){
+	int w1;
+	vector<Building>& building_set = state->building[ts19_flag];
+	int space =  lim_building_num - building_set.size();
+	utility = space*w1;
+	return utility;
+}
+int _Maintain::assess(){
+	int w1 = 1;
+	int loss = 0;
+	//è®¡ç®—æ‰€æœ‰æœ¬ç±»å»ºç­‘çš„æ‰è¡€é‡ 
+	vector<Building>& building_set = state->building[ts19_flag];
+	for (auto iter = building_set.cbegin(); iter != building_set.cend(); iter++) {
+		if(iter->building_type == buildingtype)
+	        loss += calculate_hp(*iter) - iter->heal;
+	}
+	utility = w1*loss;
+	return utility;
+	
+} 
+int _Upgrade()::assess(){
+	int w1 = 1;
+	int age = state->age[ts19_flag];
+	int space = 0; 
+	//è®¡ç®—ç›®å‰æœ¬ç±»å»ºç­‘å‡çº§ç©ºé—´ï¼Œå³èƒ½å‡çº§ä½†è¿˜æœªå‡çº§çš„å»ºç­‘æœ‰å¤šå°‘ 
+	for (auto iter = building_set.cbegin(); iter != building_set.cend(); iter++) {
+		if(iter->building_type == buildingtype)
+	        space += age - iter->level;
+	}
+	utility = w1*space;
+	return utility;
+}
 void _UpgradeAGE::execute() {
+	
 }
 void _Construct::execute() {
+	
 }
 void _Maintain::execute() {
+	vector<Building> temp = min_cost();
+	for(int i=0; i<temp.size(); i++)
+	    toggleMaintain(temp[i]->unit_id);
 }
 void _Upgrade::execute() {
 }
@@ -515,4 +656,59 @@ void _Programmar::execute() {
 }
 void _Sell::execute() {
 }
-*/
+vector<Position> _Construct::find_best_place()
+{
+	//å¯¹äºé˜²å¾¡å»ºç­‘æ¥è¯´ 
+	if( this->buildingtype >= Bool && this->buildingtype <= Hawkin){
+	int load_fit[road_num] = {};      //åˆ¤æ–­é€‚åˆåœ¨å“ªæ¡è·¯å‘¨å›´å»ºé€ è¯¥å»ºç­‘ 
+	for(int i=0; i<road_num; i++)
+	{
+		for(int j=0; j<all_unit_num; j++)
+		    load_fit[i] += ensoldier_num[i][j]*restrain_table[this->buildingtype][j];  //æ­¤å¤„åº”æœ‰bug 
+	}            
+	
+	priority_queue<Node> q;    //ä¼˜å…ˆçº§é˜Ÿåˆ—ï¼Œä¿å­˜utilityæœ€é«˜çš„ä½ç½® 
+	struct Node {
+        int utility;
+        Position p;
+        friend bool operator < (const node &a, const node &b) {  
+            return a.priority < b.priority;
+        }    
+    };
+	int w1=1, w2=1;
+	for(int i=0; i<50; i++)    //ä»ä¸»åŸºåœ°å‘¨å›´å¼€å§‹å¯»æ‰¾ï¼Œåªå¯»æ‰¾50*50çš„åœ°æ–¹ 
+	    for(int j=0; j<50; j++){
+	    	if(i<7 && j<7)  continue; //ä¸æ‰¾ä¸»åŸºåœ° 
+	    	if(map[i][j] == legal_area) 
+	    	{ 
+	    	    int distance = map2[i][j]%100 > alculate_attackRange(this->buildingtype)? map2[i][j]%100 : 0; //åªè¦ä¸è¶…è¿‡æ”»å‡»èŒƒå›´ï¼Œç¦»è·¯è·ç¦»è¶Šå¤§è¶Šå¥½ 
+	    	    utility = w1*distance + w2*load_fit[map2[i][j]/100]   //map2ç”³æ˜åœ¨treeä¸­ï¼Œæœªå®ç° 
+	    	    Node* temp = new Node(); temp->utility = utility; temp->p = Position(i,j);
+	    	    q.push(*temp);
+	    	} 
+		}
+	vector<Position> best_places;
+	for(int i=0; i<this->construct_num; i++)
+    {
+    	best_places.push_back(q.top()); q.pop();
+	}
+	return best_places;
+	}
+	//å¯¹äºè¿›æ”»å»ºç­‘æ¥è¯´ 
+    if( this->buildingtype >= Shannon && this->buildingtype <= Tony_Stark){//å¤ªéº»çƒ¦äº†æœªå®Œæˆï¼Œå¯ä»¥å…ˆæ³¨é‡Šæ‰ç”¨random 
+    	int weakness[road_num] = {};    //æ ¹æ®æˆ‘æ–¹å°å…µæ­»äº¡é€Ÿåº¦ åˆ¤æ–­è¿™æ¡è·¯æ˜¯å¦å€¼å¾—è¿›æ”»ï¼Œè¿™ä¹ˆåšå¯èƒ½ä¼šè½åäºæ•Œæ–¹å»ºç­‘æƒ…å†µ,å¦å¤–åˆå§‹å¯èƒ½æœ‰é—®é¢˜ 
+    	//ä¸Šå›åˆå¼€å§‹æ—¶è¿™æ¡è·¯ä¸ŠæŸç±»å°å…µè¡€é‡ - ä¸Šå›åˆæ‰è¡€é‡ + ä¸Šå›åˆç”Ÿäº§é‡ =  æœ¬å›åˆå¼€å§‹æ—¶è¿™æ¡è·¯ä¸ŠæŸç±»å°å…µè¡€é‡
+    	vector<Building>& building_set = state->building[ts19_flag];
+    	int  production[road_num] = {};  //è¯è¯´è¿™ä¸€æ­¥å¯ä»¥åœ¨refreshåš , stateé‡Œé¢ä¿å­˜çš„æ˜¯å›åˆå¼€å§‹æ—¶çš„æ•°æ®å—ï¼Ÿ 
+        for (auto iter = building_set.cbegin(); iter != building_set.cend(); iter++) {
+	        production[map[iter->pos.x][iter->pos.y]-road1] += caculate_hp();//å¦‚ä½•è®¡ç®—æŸç±»å»ºç­‘å¯¹åº”çš„å°å…µè¡€é‡ï¼Ÿ 
+    	}
+    	for(int i=0; i<road_num; i++)
+	    {
+		    for(int j=0; j<all_unit_num; j++)
+		        weakness[i] += mysoldier_heal_last[i][this->buildingtype] - mysoldier_heal[i][this->buildingtype] + production[i];
+    	} 
+    	
+	}        
+}
+

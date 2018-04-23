@@ -1,6 +1,6 @@
 #include"communication.h"
 #include<vector>
-#include<priority_queue>
+#include<queue>
 #include<iostream>
 #include <algorithm>
 using std::cout;
@@ -15,13 +15,25 @@ extern int** ts19_map;
 extern bool ts19_flag;
 
 /**********************自定义变量*************************/
-const int all_type = 28;						//总共27种单位与建筑加上敌方Age
-const int all_buildings_num = Building_Type;	//所有建筑数量
-const int all_unit_num = Soldier_Type;			//所有单位数量
+const int all_type = 28;									//总共27种单位与建筑加上敌方Age
+const int all_buildings_num = Building_Type;				//所有建筑数量
+const int all_unit_num = Soldier_Type;						//所有单位数量
 const int all_operation = 5;		
-const int max_command_num = 50;	//单回合最多打指令数
+const int max_command_num = 50;								//单回合最多打指令数
+
+int update_resource = 0;									//保留给升级的资源
+int map[MAP_SIZE][MAP_SIZE] = {};							//自定义map，显示路与建筑
+int extern_road_num = 0;
+int lim_building_num;										//建筑数目上限，初始和升级时维护 
+int lim_building_force;										//建造力上限 ，初始和升级时维护 
 Position my_base_pos;
 Position enemy_base_pos;
+int map2[MAP_SIZE][MAP_SIZE] = {};							//维护到路的距离，假如最近的是road_n, 距离为15，则表示为 n15 , 地图尚未实现 
+
+vector<vector<float>> mysoldier_heal;						//每条路上的我方血量
+vector<vector<float>> mysoldier_heal_last;					//每条路上的我方血量_上回合 
+vector<vector<int>> ensoldier_num;							//每条路上的敌方兵力
+vector<vector<int>> enbuilding_num;							//每条路附近的敌方建筑 
 
 enum operation {			//各种操作
 	_updateAGE,
@@ -120,20 +132,20 @@ const double restrain_table[Building_Type][Building_Type] = {   //建筑相克�
 	{ Musk,				0,		0,		0.2,		0.8,	0,		20,			1},
 	{ Hawkin,			0,		0,		0.3,		0.8,	0,		30,			1},
 	{ Programmer,		0,		1,		0,			0,		0.1,	0,			1}
-}
+};
 
 /**************************各种辅助函数**********************/
 int abs(int x, int y) { return x > y ? x - y : y - x; }
 int dist(Position a, Position b) { return abs(a.x, b.x) + abs(a.y, b.y); }
-Position find_best(int building_type);	//寻路函数
-
-
-/*bool construct_legal(Position pos) {
-
+bool outofRange(int x, int y) {
+	if (x < 0 || x >= 200 || y < 0 || y >= 200)
+		return 0;
 }
-float calculate_special(BuildingType b,int flag) {
-
+/*bool construct_legal(Position pos) {
 }*/
+float calculate_special(BuildingType b,int flag) {
+	return 0;
+}
 float calculate_attack(Soldier a) {
 	return (1 + 0.5*a.level) * OriginalSoldierAttribute[a.soldier_name][SOLDIER_ORIGINAL_ATTACK];
 }
@@ -158,10 +170,10 @@ float calculate_attackRange(Building b) {
 float calculate_CD(Building b) {
 	return (1 + 0.5*b.level) * OriginalBuildingAttribute[b.building_type][ORIGINAL_RANGE];
 }
-float calculate_resource_cost(BuildingType b, int level) {
+int calculate_resource_cost(BuildingType b, int level) {
 	return (1 + 0.5*level) * OriginalBuildingAttribute[b][ORIGINAL_RESOURCE];
 }
-float calculate_building_force(BuildingType b, int level) {
+int calculate_building_force(BuildingType b, int level) {
 	return (1 + 0.5*level) * OriginalBuildingAttribute[b][ORIGINAL_BUILDING_POINT];
 }
 float calculate_utility(Soldier a) {   //计算一个已经存在的兵的效用 
@@ -174,11 +186,186 @@ float calculate_utility(Soldier a) {   //计算一个已经存在的兵的效用
 	
 }
 float calculate_utility(Building b) {	//	对所有建筑都适用
+	if (b.building_type == Programmer) return calculate_attack(b) ;
+	else if (b.building_type == Base) return 0;
 	int distance = (b.flag == ts19_flag) ? dist(b.pos, enemy_base_pos) : dist(b.pos, my_base_pos);
 	return b.heal * utility_weight2[b.building_type][_hp] +
 		calculate_attack(b) * utility_weight2[b.building_type][_attack] +
 		calculate_attackRange(b.building_type, b.level) * utility_weight2[b.building_type][_range] +
 		calculate_special(b.building_type,b.flag) * utility_weight2[b.building_type][_special];
+}
+float calculate_utility(BuildingType b, int flag) {//计算所有己方b类建筑的总效用 
+	float u = 0;
+	for (auto iter = state->building[flag].cbegin(); iter != state->building[flag].cend(); iter++) {
+		if (iter->building_type == b)
+			u += calculate_utility(*iter);
+	}
+	return u;
+}
+float calculate_utility_change(Building b) {//返回升级的效用增量
+	return 0.5 * (
+		b.heal / calculate_hp(b) * utility_weight2[b.building_type][_hp] * OriginalBuildingAttribute[b.building_type][ORIGINAL_HEAL] +
+		OriginalBuildingAttribute[b.building_type][ORIGINAL_ATTACK] * utility_weight2[b.building_type][_attack] +
+		OriginalBuildingAttribute[b.building_type][ORIGINAL_RANGE] * utility_weight2[b.building_type][_range]);
+
+}
+float calculate_upgradeB_Rcost(Building b) {//升级建筑的资源消耗
+	return 0.5 * OriginalBuildingAttribute[b.building_type][ORIGINAL_RESOURCE];
+}
+float calculate_upgradeB_Fcost(Building b) {//升级建筑的建造点消耗
+	return 0.5 * OriginalBuildingAttribute[b.building_type][ORIGINAL_BUILDING_POINT];
+}
+
+void tranverse_r(Position pos, int r, void(*p)(Position,int)) {//遍历pos周围汉米敦距离r的点，并做操作
+	if (r <= 0) return;
+	int upBound = 200;
+	int x = pos.x - r;
+	int y = pos.y;
+	while (x <= pos.x) {
+		if (outofRange(x, y))
+			continue;
+		else {
+			p(pos,r);
+		}
+		x++;
+		y++;
+	}
+	while (y >= pos.y) {
+		if (outofRange(x, y))
+			continue;
+		else {
+			p(pos,r);
+		}
+		x++;
+		y--;
+	}
+	while (x >= pos.x) {
+		if (outofRange(x, y))
+			continue;
+		else {
+			p(pos,r);
+		}
+		x--;
+		y--;
+	}
+	while (y <= pos.y) {
+		if (outofRange(x, y))
+			continue;
+		else {
+			p(pos,r);
+		}
+		x--;
+		y++;
+	}
+
+}
+void tranverse_r(Position pos, int rmin, int rmax, void(*p)(Position,int)) {
+	while (rmin <= rmax) {
+		tranverse_r(pos, rmin, p);
+		rmin++;
+	}
+}
+void tranverse_r(Position pos, int r, vector<Position> s_pos) {	//帮助找该点最近的路的位置
+	int roadNO = map2[pos.x][pos.y] / 100;
+	if (r <= 0) return;
+	int upBound = 200;
+	int x = pos.x - r;
+	int y = pos.y;
+	while (x <= pos.x) {
+		if (outofRange(x, y))
+			continue;
+		else {
+			if (map[pos.x][pos.y] == roadNO) {
+				s_pos.push_back(Position(x, y));
+				return;
+			}
+		}
+		x++;
+		y++;
+	}
+	while (y >= pos.y) {
+		if (outofRange(x, y))
+			continue;
+		else {
+			if (map[pos.x][pos.y] == roadNO) {
+				s_pos.push_back(Position(x, y));
+				return;
+			}
+		}
+		x++;
+		y--;
+	}
+	while (x >= pos.x) {
+		if (outofRange(x, y))
+			continue;
+		else {
+			if (map[pos.x][pos.y] == roadNO) {
+				s_pos.push_back(Position(x, y));
+				return;
+			}
+		}
+		x--;
+		y--;
+	}
+	while (y <= pos.y) {
+		if (outofRange(x, y))
+			continue;
+		else {
+			if (map[pos.x][pos.y] == roadNO) {
+				s_pos.push_back(Position(x, y));
+				return;
+			}
+		}
+		x--;
+		y++;
+	}
+}
+void tranverse_pro(Position pos, int r, vector<Position> poses) {//给码农用的
+	if (r <= 0) return;
+	int upBound = 200;
+	int x = pos.x - r;
+	int y = pos.y;
+	while (x <= pos.x) {
+		if (outofRange(x, y))
+			continue;
+		else {
+			if (map[x][y] == legal_area)
+				poses.push_back(Position(x, y));
+		}
+		x++;
+		y++;
+	}
+	while (y >= pos.y) {
+		if (outofRange(x, y))
+			continue;
+		else {
+			if (map[x][y] == legal_area)
+				poses.push_back(Position(x, y));
+		}
+		x++;
+		y--;
+	}
+	while (x >= pos.x) {
+		if (outofRange(x, y))
+			continue;
+		else {
+			if (map[x][y] == legal_area)
+				poses.push_back(Position(x, y));
+		}
+		x--;
+		y--;
+	}
+	while (y <= pos.y) {
+		if (outofRange(x, y))
+			continue;
+		else {
+			if (map[x][y] == legal_area)
+				poses.push_back(Position(x, y));
+		}
+		x--;
+		y++;
+	}
+
 }
 
 void f_player()
@@ -230,7 +417,7 @@ class _Resource :public Node			//获取资源，一般不需要维修，但过�
 public:
 	int assess();
 	void execute();
-	int evaluate();						//资源获取目标估计
+	
 };
 class _Development :public Node			//建造 进攻或防守 
 										//计算攻击和防御需要达到的效用值，再加上原有的攻击防御偏好，分配每个行为的值
@@ -260,6 +447,8 @@ class _Programmar :public Node			//码农的维修，升级，建造，单独有
 public:
 	int assess();
 	void execute();
+	void sell_programmer();				//卖掉码农
+	vector<Position> find_best_place(int n);	//在基地周围建码农
 };
 class _Sell :public Node				//通过卖房子获取资源
 {
@@ -286,13 +475,7 @@ public:
 	_BuildingNode(BuildingType b) :buildingtype(b) {}
 
 };
-/*class _BuildingMethod : public Node {	//决定以何种方式加强建筑
-public:
-	int assess();
-	void execute();
-	BuildingType buildingtype;
-	_BuildingMethod(BuildingType b) : buildingtype(b) {}
-};*/
+
 class _Construct :public Node
 {
 public:
@@ -301,11 +484,12 @@ public:
 	BuildingType buildingtype;
 	_Construct(BuildingType b) :buildingtype(b) {}
 
-	void fresh_num(int num) { construct_num = (num >= 0) ? num : 0; }
+	vector<Position> find_soldier_pos(vector<Position>& b_pos);	//根据建筑位置列表，选择最佳的生产地点
 	vector<Position> find_best_place();			//寻找到最佳的位置来建造
 private:
 	int construct_num = 0;
 };
+
 class _Maintain :public Node
 {
 public:
@@ -316,10 +500,11 @@ public:
 	_Maintain(BuildingType b) :buildingtype(b) {}	
 
 	void fresh_num(int num) { maintain_num = (num >= 0) ? num : 0; }
-	vector<Building> min_cost();	//返回维修费用最少的，限定数量的建筑，切记每回合维修最多20%的血量
+	vector<int> min_cost();	//返回维修费用最少的，限定数量的建筑，切记每回合维修最多20%的血量
 private:
 	int maintain_num = 0;
 };
+
 class _Upgrade :public Node
 {
 public:
@@ -329,7 +514,7 @@ public:
 	_Upgrade(BuildingType b) :buildingtype(b) {}
 
 	void fresh_num(int num) { upgrade_num = (num >= 0) ? num : 0; }
-	vector<Building> min_cost();		//返回升级费用最小且最优的建筑
+	vector<int> min_cost();		//返回升级费用最小且最优的建筑id
 private:
 	int upgrade_num = 0;
 };
@@ -355,6 +540,7 @@ void Node::tick(int f_power, int f_resource, int f_utility)
 		execute();
 }
 
+
 class Tree
 {
 public:
@@ -369,20 +555,20 @@ private:
 	//参数表
     int road_num = 3; //需要在init中计算 
 	float threaten_buliding[all_buildings_num] = {};				//敌方各种类型单位的威胁值
-	float threaten_soldier[road_num][all_unit_num] = {};					//每条路上每种兵的威胁
+	//float threaten_soldier[road_num][all_unit_num] = {};					//每条路上每种兵的威胁
 	//float weight[all_operation] = {	1, 1, 0.1, 0.1, 0.9 };			//己方各种操作权重
 	float building_weight[Building_Type] = {};						//各种建筑的权重，建筑标识参照api文件
 	float soldier_weight[Soldier_Type] = 
 	{ };															//对各种士兵的基础权重
 	float evaluate_table[3] = {};									//对三个节点做出评估
 	//每回合需更新的信息
-	int map[MAP_SIZE][MAP_SIZE];							//自定义map，显示路与建筑
-	float mysoldier_heal[road_num][all_unit_num] = {};           //每条路上的我方血量
-	float mysoldier_heal_last[road_num][all_unit_num] = {};           //每条路上的我方血量_上回合 
-	float ensoldier_num[road_num][all_unit_num] = {};				//每条路上的敌方兵力
-	float enbuilding_num[road_num][all_buildings_num] = {};           //每条路附近的敌方建筑 
-	int lim_building_num;    //建筑数目上限，初始和升级时维护 
-	int lim_building_force;   //建造力上限 ，初始和升级时维护 
+	//int map[MAP_SIZE][MAP_SIZE];							//自定义map，显示路与建筑
+	/* vector<vector<float>> mysoldier_heal ;           //每条路上的我方血量
+	vector<vector<float>> mysoldier_heal_last ;           //每条路上的我方血量_上回合 
+	vector<vector<int>> ensoldier_num ;				//每条路上的敌方兵力
+	vector<vector<int>> enbuilding_num ;           //每条路附近的敌方建筑 */
+	
+	
 	int map2[MAP_SIZE][MAP_SIZE]; //维护到路的距离，假如最近的是road_n, 距离为15，则表示为 n15 , 地图尚未实现 
 };
 
@@ -414,6 +600,7 @@ Tree::Tree()
 			temp.push_back(new _Upgrade(BuildingType(i)));
 
 		}
+	
 };
 
 void Tree::tranverse() {
@@ -424,14 +611,28 @@ void Tree::tranverse() {
 		this->root->children[i]->execute();
 	}*/
 	root->utility = 1;
-    root->tick(60+40*state->age[ts19_flag], state->resource[ts19_flag], root->utility)
+	root->tick(60 + 40 * state->age[ts19_flag], state->resource[ts19_flag], root->utility);
 }
 
+void paint_maplegal(Position pos,int r) { 
+    if(ts19_map[iter->pos.x][iter->pos.y] != 1 
+	    && ts19_map[iter->pos.x][iter->pos.y] != 2
+		&& map[iter->pos.x][iter->pos.y] != en_building
+		&& map[iter->pos.x][iter->pos.y] != my_building) 
+		    map[iter->pos.x][iter->pos.y] = legal_area;
+}
+void paint_mapblank(Position pos,int r) { 
+    if(ts19_map[iter->pos.x][iter->pos.y] != 1 
+	    && ts19_map[iter->pos.x][iter->pos.y] != 2
+		&& map[iter->pos.x][iter->pos.y] != en_building
+		&& map[iter->pos.x][iter->pos.y] != my_building) 
+		    map[iter->pos.x][iter->pos.y] = blank;
+}
 void Tree::refresh_map() {	//更新地图
 	if (state->turn >= 1) {   //直接全部设blank? 
-		vector<Building>* building_set = state->building;     //把一个数组赋值给一个vector? 
-		vector<Building>* building_set_last = all_state.back()->building;
-		for (int index = 0; index <= 1; index++) {
+		vector<Building>* building_set = state->building[ts19_flag];     //把一个数组赋值给一个vector? 
+		vector<Building>* building_set_last = all_state.back()->building[ts19_flag];
+		/*for (int index = 0; index <= 1; index++) {
 			for (auto iter = building_set_last[index].cbegin();
 				iter != building_set_last[index].cend(); iter++) {
 				bool can_find = false;
@@ -444,37 +645,39 @@ void Tree::refresh_map() {	//更新地图
 				}
 				if (!can_find) map[iter->pos.x][iter->pos.y] = blank;
 			}
-		}
-		//有问题，尚未考虑主建筑 
-		for (auto iter = building_set_last[ts19_flag].cbegin();
-			iter != building_set_last[ts19_flag].cend();
-			iter++) {
-			map[iter->pos.x][iter->pos.y] = my_building;
-			for(int i=-8; i<=8; j++)                 //在自己建筑周围第一轮遍历，将8以内设为可建造区域 
-			    for(int j=-8; j<=8; j++)
-			        if((i==0 && j==0) || outofRange(iter->pos.x + i,iter->pos.y + j))    //outogrange还没写 
-			            break;
-			        else
-			            map[iter->pos.x + i][iter->pos.y + j] = legal_area;
-		}
-		for (auto iter = building_set_last[ts19_flag].cbegin();
-			iter != building_set_last[ts19_flag].cend();
-			iter++) {
-			map[iter->pos.x][iter->pos.y] = my_building;
-			for(int i=-2; i<=2; j++)                 //在自己建筑周围第二轮遍历，将2以内设为不可建造区域 
-			    for(int j=-2; j<=2; j++)
-			            if((i==0 && j==0) || outofRange(iter->pos.x + i,iter->pos.y + j)) 
-			                break;
-			            else
-			                map[iter->pos.x + i][iter->pos.y + j] = blank;
-		}
+		}*/
 		for (auto iter = building_set_last[1 - ts19_flag].cbegin();
 			iter != building_set_last[1 - ts19_flag].cend();
 			iter++) {
 			map[iter->pos.x][iter->pos.y] = en_building;
 		}
+		my_base_pos = state->building[ts19_flag][0].pos;
+		for (auto iter = building_set[ts19_flag].cbegin();
+			iter != building_set[ts19_flag].cend();
+			iter++) {
+			map[iter->pos.x][iter->pos.y] = my_building;
+			   
+		}
+		for(int i=7; i<7+8; i++)
+		    for(int j=0; j<7; j++)
+		        paint_maplegal(Position(i,j),0);
+		for(int i=0; i<7; i++)
+		    for(int j=7; j<7+8; j++)
+		        paint_maplegal(Position(i,j),0);       
+		for (auto iter = building_set[ts19_flag].cbegin();
+			iter != building_set[ts19_flag].cend();
+			iter++) {
+			tranverse_r(iter->pos,1,8,paint_maplegal);                 //在自己建筑周围第一轮遍历，将8以内设为可建造区域 	   
+		}
+		for (auto iter = building_set[ts19_flag].cbegin();
+			iter != building_set[ts19_flag].cend();
+			iter++) {
+			tranverse_r(iter->pos,1,1,paint_mapblank);                 //在自己建筑周围第二轮遍历，将2以内设为不可建造区域 
+			    
+		}
 	}
 }
+
 
 void Tree::init_map() {		//初始化地图并将路进行标号 ,第0回合不需要对建筑标记吗？ 
 	if (state->turn == 0) {    //如果路不往回拐的话，似乎可以简单地解决，如果往回拐我就不会了 
@@ -504,7 +707,7 @@ void Tree::init_map() {		//初始化地图并将路进行标号 ,第0回合不�
 		}
 		//再处理和左边主基地在同一行的情况 
 		{
-			int road_count = 0;  int i = 7
+			int road_count = 0;  int i = 7;
 		    for(int j=0; j<=7; j++) if(ts19_map[i][j] == 1) road_count += 1;
 			for (int i = 0; i < 7; i++) {      
 			    for (int j = 0; j <= MAP_SIZE - 1; j++){
@@ -527,7 +730,38 @@ void Tree::init_map() {		//初始化地图并将路进行标号 ,第0回合不�
 			}
 	    }
 		}
-	 
+		extern_road_num = road_num;
+		for (int i = 0; i <= road_num - 1; i++) {
+			mysoldier_heal.push_back(vector<float>(all_unit_num));
+			mysoldier_heal_last.push_back(vector<float>(all_unit_num));
+			enbuilding_num.push_back(vector<int>(all_buildings_num));
+			ensoldier_num.push_back(vector<int>(all_unit_num));
+		}
+
+		//以下为map2的初始化
+		for(int i = 0; i <= MAP_SIZE-1; i++)
+			for (int j = 0; j <= MAP_SIZE - 1; j++) {
+				if (map[i][j] != blank)
+					continue;
+				else {
+					bool find = false;
+					for (int k = 0; ; k++) {
+						if (find) break;
+						else {
+							Position pos(i, j);
+							tranverse_r(pos, k, paint_map2);
+							if (map2[i][j] != 0)
+								find = true;
+						}
+					}
+				}
+			}
+	}
+}
+
+void paint_map2(Position pos,int r) { //可能没有8条路 
+	if (map[pos.x][pos.y] <= road8 && map[pos.x][pos.y] >= road1) {
+		map2[pos.x][pos.y] = r + 100 * (map[pos.x][pos.y]-road1);
 	}
 }
 
@@ -541,7 +775,7 @@ void Tree::refresh_unit() {		//将敌方unit统计表清零，并重新统计
 		ensoldier_num[map[iter->pos.x][iter->pos.y] - road1][iter->soldier_name] ++;
 	}
 	                           //将我方unit统计表清零，并重新统计
-	for (int i = 0; i <= roda_num; i++) 
+	for (int i = 0; i <= road_num; i++) 
 		for (int j = 0; j <= all_unit_num - 1; j++) {
 			mysoldier_heal[i][j] = 0;
 		}
@@ -550,11 +784,11 @@ void Tree::refresh_unit() {		//将敌方unit统计表清零，并重新统计
 		mysoldier_heal[map[iter->pos.x][iter->pos.y] - road1][iter->soldier_name] += iter->heal;
 	}
 	
-	for (int i = 0; i <= roda_num; i++)   //将我方上回合unit血量统计表清零并重新统计 
+	for (int i = 0; i <= road_num; i++)   //将我方上回合unit血量统计表清零并重新统计 
 		for (int j = 0; j <= all_unit_num - 1; j++) {
 			mysoldier_heal_last[i][j] = 0;
 		}
-	vector<Soldier>& soldier_set3 = all_state.back()->soldier[ts19_flag]
+	vector<Soldier>& soldier_set3 = all_state.back()->soldier[ts19_flag];
 	for (auto iter = soldier_set3.cbegin(); iter != soldier_set3.cend(); iter++) {
 		mysoldier_heal_last[map[iter->pos.x][iter->pos.y] - road1][iter->soldier_name] += iter->heal;
 	}
@@ -571,21 +805,78 @@ int _UpgradeAGE::assess() {
     this->utility = en_re + backward;
     return utility;
 }
+
 int _Development::assess() {
-	
+	float s_utility = 0, en_s_utility = 0;
+	float b_utility = 0, en_b_utility = 0;
+	//计算所有的效用并叠加，直接比较差值
+	int basic_develop = 200 * state->age[ts19_flag];
+	for (int i = 0; i <= state->building[ts19_flag].size() - 1; i++) {
+		if (state->building[ts19_flag][i].building_type != Programmer &&
+			state->building[ts19_flag][i].building_type != Base) {
+			b_utility += calculate_utility(state->building[ts19_flag][i]);
+		}
+	}
+	for (int i = 0; i <= state->building[1-ts19_flag].size() - 1; i++) {
+		if (state->building[1-ts19_flag][i].building_type != Programmer &&
+			state->building[1-ts19_flag][i].building_type != Base) {
+			en_b_utility += calculate_utility(state->building[1-ts19_flag][i]);
+		}
+	}
+	for (int i = 0; i <= state->soldier[ts19_flag].size() - 1; i++) {
+		s_utility += calculate_utility(state->soldier[ts19_flag][i]);	
+	}
+	for (int i = 0; i <= state->soldier[1-ts19_flag].size() - 1; i++) {
+		en_s_utility += calculate_utility(state->soldier[1-ts19_flag][i]);
+	}
+
+	int utility =  0.65 * (en_b_utility - b_utility) + 0.35 * (en_s_utility - s_utility);
+	return utility >= 0 ? utility : basic_develop;
 }
+
 int _Resource::assess() {
+	vector<Building> building_set; 
+	vector<Building> en_building_set;
+	for (auto iter = state->building[ts19_flag].cbegin(); iter != state->building[ts19_flag].cend(); iter++) {
+		if (iter->building_type == Programmer) {
+			building_set.push_back(*iter);
+		}
+	}
+	for (auto iter = state->building[1-ts19_flag].cbegin(); iter != state->building[1-ts19_flag].cend(); iter++) {
+		if (iter->building_type == Programmer) {
+			en_building_set.push_back(*iter);
+		}
+	}
+
+	int resource_get = 0;
+	int en_resource_get = 0;
+	for (int i = 0; i <= building_set.size() - 1; i++)
+		resource_get += (OriginalBuildingAttribute[Programmer][ORIGINAL_ATTACK] *
+		((building_set[i].level - BIT) * 0.5 + 1));
+	for (int i = 0; i <= en_building_set.size() - 1; i++)
+		en_resource_get += (OriginalBuildingAttribute[Programmer][ORIGINAL_ATTACK] *
+		((en_building_set[i].level - BIT) * 0.5 + 1));
+
+	//计算单位时间资源获得数
+	int delta =  en_resource_get - resource_get;
+	int backward = (state->age[ts19_flag] > state->age[1 - ts19_flag]) ? 1 : 5;
+	int resource_dis = state->resource[ts19_flag] - state->resource[1 - ts19_flag];
+	int utility = (0.2 * resource_dis + backward + 0.8 * delta);
+	return  utility >= 0  ? utility : 0 ;
 }
+
 int _Attack::assess() {
 	int w1 = 1;  //敌方主基地掉血权重 
 	int utility = w1*(calculate_hp(state->building[1-ts19_flag][0]) - state->building[1-ts19_flag][0].heal);
-	return ultility;
+	return utility;
 }
+
 int _Defend::assess() {
     int w1 = 1;  //主基地掉血权重 
 	int utility = w1*(calculate_hp(state->building[ts19_flag][0]) - state->building[ts19_flag][0].heal);
-	return ultility;
+	return utility;
 }
+
 int _BuildingNode::assess() {
 	//遍历敌方建筑列表 
     vector<Building>& building_set = state->building[1 - ts19_flag];
@@ -596,24 +887,29 @@ int _BuildingNode::assess() {
 	int restrain = 0; //表示我方建筑对敌方的克制程度
 	for(int i=0; i<Building_Type; i++)
 	{
-		restrain += num[i]*restrain_table[int(this->BuildingType)][i];
-	 } 
+		restrain += num[i]*restrain_table[int(this->buildingtype)][i];
+	} 
 	 int w1=1, w2=1;
-	 this->utility = w1*restrain + w2*calculate_utility(this->BuildingType);  //克制能力和建筑本身效用值加权得到最终效用值 
-	 return utility;
+	 this->utility = w1*restrain + w2*calculate_utility(this->buildingtype,ts19_flag);  //克制能力和建筑本身效用值加权得到最终效用值 
+	 return utility;		//不明意图，得问
 }
 
 int _Programmar::assess() {
+
 }
+
 int _Sell::assess() {
+	return 0;
 }
+
 int _Construct::assess(){
-	int w1;
+	int w1 = 1;
 	vector<Building>& building_set = state->building[ts19_flag];
-	int space =  lim_building_num - building_set.size();
+	int space =  lim_building_num - building_set.size();	//???????
 	utility = space*w1;
 	return utility;
 }
+
 int _Maintain::assess(){
 	int w1 = 1;
 	int loss = 0;
@@ -627,10 +923,12 @@ int _Maintain::assess(){
 	return utility;
 	
 } 
-int _Upgrade()::assess(){
+
+int _Upgrade::assess(){
 	int w1 = 1;
 	int age = state->age[ts19_flag];
 	int space = 0; 
+	vector<Building> building_set = state->building[ts19_flag];
 	//计算目前本类建筑升级空间，即能升级但还未升级的建筑有多少 
 	for (auto iter = building_set.cbegin(); iter != building_set.cend(); iter++) {
 		if(iter->building_type == buildingtype)
@@ -639,76 +937,287 @@ int _Upgrade()::assess(){
 	utility = w1*space;
 	return utility;
 }
+
 void _UpgradeAGE::execute() {
-	
-}
+	update_resource += max_resource;
+	if (update_resource >= UPDATE_COST + UPDATE_COST_PLUS * (state->age[ts19_flag] - BIT)) {
+		UpdateAge();
+	}
+	else {
+		if (all_state[all_state.size() - 1]->age[ts19_flag] < state->age[ts19_flag]) {
+			update_resource -= (UPDATE_COST + UPDATE_COST_PLUS * (state->age[ts19_flag] - BIT - 1));
+		}
+	}
+}//
+
 void _Construct::execute() {
-	
+	int cost = calculate_resource_cost(buildingtype, state->age[ts19_flag]);
+	float f_num = max_resource / cost;
+	int num = max_resource / cost;
+	if (f_num - num > 0.31415) num++;
+	construct_num = num;						//选取建造数目
+	vector<Position> temp = find_best_place();	
+	vector<Position> s_pos = find_soldier_pos(temp);
+	for (int i = 0; i <= temp.size() - 1; i++) {
+		construct(buildingtype, temp[i], s_pos[i]);	
+	}
+
 }
+
 void _Maintain::execute() {
-	vector<Building> temp = min_cost();
+	vector<int> temp = min_cost();
 	for(int i=0; i<temp.size(); i++)
-	    toggleMaintain(temp[i]->unit_id);
+	    toggleMaintain(temp[i]);
 }
+
 void _Upgrade::execute() {
+	vector<int> upgrade_list = min_cost();
+	for (int i = 0; i <= upgrade_list.size() - 1; i++)
+		upgrade(upgrade_list[i]);
 }
+
 void _Programmar::execute() {
+	sell_programmer();			//排除老旧建筑
+	int upbound = 8 + 2 * (int)(state->age - BIT);
+	int programmer_num = 0;
+	vector<Building> pros;
+	for (int i = 0; i <= state->building[ts19_flag].size() - 1; i++) {
+		if (state->building[ts19_flag][i].building_type == Programmer) {
+			pros.push_back(state->building[ts19_flag][i]);
+		}
+	}
+	programmer_num = pros.size();
+	int re_cost = calculate_resource_cost(Programmer, state->age[ts19_flag]);
+	int fo_cost = calculate_building_force(Programmer, state->age[ts19_flag]);
+	int build_num = (max_resource / re_cost > max_power / fo_cost) ? max_power / fo_cost : max_resource / re_cost;
+	build_num = (build_num > upbound - programmer_num) ? upbound - programmer_num : build_num;
+	vector<Position> temp = find_best_place(build_num);
+	for (int i = 0; i <= temp.size() - 1; i++) {
+		construct(Programmer, temp[i]);
+	}
 }
+
 void _Sell::execute() {
+	int preserve_num = 5;	//保留指令数
+	vector<Building> temp;
+	for (int i = 0; i <= state->building[ts19_flag].size() - 1; i++) {//等级太低或者血量不够,且排除一些建筑类型
+		if (state->building[ts19_flag][i].level <= state->age[ts19_flag] - 3
+			|| state->building[ts19_flag][i].heal < 0.3 * calculate_hp(state->building[ts19_flag][i])) {
+			if (state->building[ts19_flag][i].building_type != Base &&
+				state->building[ts19_flag][i].building_type != Programmer &&
+				state->building[ts19_flag][i].building_type != Musk) {
+				temp.push_back(state->building[ts19_flag][i]);
+			}
+		}
+	}
+
+	for (int i = 0; i <= preserve_num - 1; i++) {
+		if (i >= temp.size())
+			break;
+		else {
+			sell(temp[i].unit_id);
+		}
+	}//按顺序选出前五个
+
 }
+
 vector<Position> _Construct::find_best_place()
 {
 	//对于防御建筑来说 
 	if( this->buildingtype >= Bool && this->buildingtype <= Hawkin){
-	int load_fit[road_num] = {};      //判断适合在哪条路周围建造该建筑 
-	for(int i=0; i<road_num; i++)
-	{
-		for(int j=0; j<all_unit_num; j++)
-		    load_fit[i] += ensoldier_num[i][j]*restrain_table[this->buildingtype][j];  //此处应有bug 
-	}            
+		
+		vector<int> load_fit = vector<int>(extern_road_num); //判断适合在哪条路周围建造该建筑 
+		for(int i = 0; i < extern_road_num; i++)
+		{
+			for(int j=0; j < all_unit_num; j++)
+				load_fit[i] += ensoldier_num[i][j]*restrain_table[this->buildingtype][j];  //此处应有bug 
+		}            
 	
-	priority_queue<Node> q;    //优先级队列，保存utility最高的位置 
-	struct Node {
-        int utility;
-        Position p;
-        friend bool operator < (const node &a, const node &b) {  
-            return a.priority < b.priority;
-        }    
-    };
-	int w1=1, w2=1;
-	for(int i=0; i<50; i++)    //从主基地周围开始寻找，只寻找50*50的地方 
-	    for(int j=0; j<50; j++){
-	    	if(i<7 && j<7)  continue; //不找主基地 
-	    	if(map[i][j] == legal_area) 
-	    	{ 
-	    	    int distance = map2[i][j]%100 > alculate_attackRange(this->buildingtype)? map2[i][j]%100 : 0; //只要不超过攻击范围，离路距离越大越好 
-	    	    utility = w1*distance + w2*load_fit[map2[i][j]/100]   //map2申明在tree中，未实现 
-	    	    Node* temp = new Node(); temp->utility = utility; temp->p = Position(i,j);
-	    	    q.push(*temp);
-	    	} 
+		priority_queue<Node> q;    //优先级队列，保存utility最高的位置 
+		struct Node {
+			int utility;
+			Position p;
+			friend bool operator < (const Node &a, const Node &b) {  
+				return a.priority < b.priority;
+			}    
+		};
+		int w1=1, w2=1;
+		for(int i=0; i<50; i++)    //从主基地周围开始寻找，只寻找50*50的地方 
+			for(int j=0; j<50; j++){
+	    		if(i<7 && j<7)  continue; //不找主基地 
+	    		if(map[i][j] == legal_area) 
+	    		{ 
+	    			int distance = map2[i][j]%100 > calculate_attackRange(this->buildingtype)? map2[i][j]%100 : 0; //只要不超过攻击范围，离路距离越大越好 
+					utility = w1 * distance + w2 * load_fit[map2[i][j] / 100];   //map2申明在tree中，未实现 
+	    			Node* temp = new Node(); temp->utility = utility; temp->p = Position(i,j);
+	    			q.push(*temp);
+	    		} 
+			}
+		vector<Position> best_places;
+		for(int i=0; i<this->construct_num; i++)
+		{
+    		best_places.push_back(q.top()); q.pop();
 		}
-	vector<Position> best_places;
-	for(int i=0; i<this->construct_num; i++)
-    {
-    	best_places.push_back(q.top()); q.pop();
-	}
-	return best_places;
-	}
-	//对于进攻建筑来说 
-    if( this->buildingtype >= Shannon && this->buildingtype <= Tony_Stark){//太麻烦了未完成，可以先注释掉用random 
-    	int weakness[road_num] = {};    //根据我方小兵死亡速度 判断这条路是否值得进攻，这么做可能会落后于敌方建筑情况,另外初始可能有问题 
-    	//上回合开始时这条路上某类小兵血量 - 上回合掉血量 + 上回合生产量 =  本回合开始时这条路上某类小兵血量
-    	vector<Building>& building_set = state->building[ts19_flag];
-    	int  production[road_num] = {};  //话说这一步可以在refresh做 , state里面保存的是回合开始时的数据吗？ 
-        for (auto iter = building_set.cbegin(); iter != building_set.cend(); iter++) {
-	        production[map[iter->pos.x][iter->pos.y]-road1] += caculate_hp();//如何计算某类建筑对应的小兵血量？ 
-    	}
-    	for(int i=0; i<road_num; i++)
-	    {
-		    for(int j=0; j<all_unit_num; j++)
-		        weakness[i] += mysoldier_heal_last[i][this->buildingtype] - mysoldier_heal[i][this->buildingtype] + production[i];
-    	} 
+		return best_places;
+		}
+		//对于进攻建筑来说 
+		if( this->buildingtype >= Shannon && this->buildingtype <= Tony_Stark){//太麻烦了未完成，可以先注释掉用random 
+    		int weakness[road_num] = {};    //根据我方小兵死亡速度 判断这条路是否值得进攻，这么做可能会落后于敌方建筑情况,另外初始可能有问题 
+    		//上回合开始时这条路上某类小兵血量 - 上回合掉血量 + 上回合生产量 =  本回合开始时这条路上某类小兵血量
+    		vector<Building>& building_set = state->building[ts19_flag];
+    		int  production[road_num] = {};  //话说这一步可以在refresh做 , state里面保存的是回合开始时的数据吗？ 
+			for (auto iter = building_set.cbegin(); iter != building_set.cend(); iter++) {
+				production[map[iter->pos.x][iter->pos.y]-road1] += caculate_hp();//如何计算某类建筑对应的小兵血量？ 
+    		}
+    		for(int i=0; i<road_num; i++)
+			{
+				for(int j=0; j<all_unit_num; j++)
+					weakness[i] += mysoldier_heal_last[i][this->buildingtype] - mysoldier_heal[i][this->buildingtype] + production[i];
+    		} 
     	
 	}        
 }
 
+vector<Position> _Construct::find_soldier_pos(vector<Position> &b_pos) {
+	vector<Position> s_pos;
+	if (buildingtype >= Bool && buildingtype <= Hawkin) {
+		for (int i = 0; i <= b_pos.size() - 1; i++) {
+			s_pos.push_back(Position());
+		}
+		return s_pos;
+	}
+	else if (buildingtype >= Shannon && buildingtype <= Tony_Stark) {
+		for (auto iter = b_pos.cbegin(); iter != b_pos.cend(); iter++) {
+			int dis = map2[iter->x][iter->y];
+			tranverse_r(*iter, dis, s_pos);
+		}
+		return s_pos;
+	}
+}
+
+vector<int> _Maintain::min_cost() {//
+	vector<Building> temp;
+	for (auto iter = state->building[ts19_flag].cbegin();
+		iter != state->building[ts19_flag].cend();
+		iter++) {
+		if (iter->building_type == this->buildingtype && iter->level >= (int)state->age-2) {
+			temp.push_back(*iter);
+		}//只考虑等级差在2以内的建筑
+	}
+	vector<int> result;
+	vector<msg> index_array;
+	float mean_index = 0;
+	for (auto iter = temp.cbegin(); iter != temp.cend(); iter++) {
+		float blood_percentage = 1- (iter->heal / calculate_hp((*iter)));
+		float percentage = (blood_percentage > 0.2) ? 0.2 : blood_percentage;
+		int price = calculate_resource_cost(iter->building_type, iter->level) * blood_percentage;
+		float index = percentage / price;
+		//用简单的贪婪算法，先找
+		mean_index += index;
+		index_array.push_back(msg(index, price, iter->unit_id));
+	}
+	mean_index /= index_array.size();
+	vector<msg> temp_2;
+	for (auto iter = index_array.cbegin(); iter != index_array.cend(); iter++) {
+		if (iter->up_index > 0.8*mean_index) {
+			temp_2.push_back((*iter));
+		}
+	}//	筛去小于平均index*0.8的建筑
+	//在从中找最小成本
+	std::sort(temp_2.begin(),temp_2.end());
+	int used_resource = 0; int i = 0;
+	while (used_resource <= max_resource && i < temp_2.size()) {//直接找最小成本
+		if (temp_2[i].cost <= max_resource - used_resource) {
+			result.push_back(temp_2[i].id);
+			used_resource += temp_2[i].cost;
+			i++;
+		}
+		else
+			break;
+	}
+	return result;
+}
+
+struct msg {	//辅助类型
+	float up_index;		//utility_price_index	
+	int cost;
+	int id;
+	msg(float a, int c, int i) { up_index = a; cost = c; id = i; }
+	bool operator > (const msg &a) const {
+		return cost > a.cost;
+	}
+	bool operator < (const msg &a) const {
+		return cost < a.cost;
+	}
+};
+
+vector<int> _Upgrade::min_cost() {	//需要考虑建造力限制，资源限制，再达最优，实际上，提升效用值基本一致，
+									//消耗资源和建造力一致
+									//所以优先升级血量高的，等级不低的即可
+	vector<Building> temp;
+	for (int i = 0; i <= state->building[ts19_flag].size() - 1; i++) {
+		if (state->building[ts19_flag][i].building_type == buildingtype
+			&& state->building[ts19_flag][i].level >= (int)state->age-3 
+			&& state->building[ts19_flag][i].level < (int) state->age) {
+			temp.push_back(state->building[ts19_flag][i]);
+		}
+	}
+
+	vector<int> id;
+	vector<msg> msg_index;
+	int f_restrict = max_resource / calculate_upgradeB_Fcost(temp[0]);	//计算资源
+	int b_restrict = max_power / calculate_upgradeB_Rcost(temp[0]);		//计算建造力
+	int max_num = (f_restrict >= b_restrict) ? b_restrict : f_restrict;
+	for (auto iter = temp.cbegin(); iter != temp.cend(); iter++) {
+		msg_index.push_back(msg(0, iter->heal, iter->unit_id));
+		
+	}
+	std::sort(msg_index.begin(),msg_index.end());
+	for (int i = 0; i <= max_num - 1; i++) {
+		if (msg_index.size() - 1 - i >= 0) {
+			id.push_back(msg_index[msg_index.size() - 1 - i].id);
+		}
+		else
+			break;
+	}
+	return id;
+
+}
+
+vector<Position> _Programmar::find_best_place(int n) {//在基地周围
+	int r = 7;
+	Position my_base = state->building[ts19_flag][0].pos;
+	if (my_base.x > 100) {
+		my_base.x = MAP_SIZE-1;
+		my_base.y = MAP_SIZE-1;
+	}
+	else {
+		my_base.x = 0;
+		my_base.y = 0;
+	}
+	vector<Position> good_place;
+	while (n > good_place.size()) {
+		tranverse_pro(my_base, r, good_place);
+		r++;
+	}
+	return good_place;
+}
+
+void _Programmar::sell_programmer() {
+	vector<Building> temp;
+	for (int i = 0; i <= state->building[ts19_flag].size() - 1; i++) {
+		if (state->building[ts19_flag][i].building_type == Programmer) {
+			temp.push_back(state->building[ts19_flag][i]);
+		}
+	}
+
+	
+	int abondon_bound = 3;			//每回合最多三个
+	for (int i = 0; i <= temp.size() - 1; i++) {
+		if (temp[i].level < (int)(state->age[ts19_flag] - 2) && abondon_bound > 0) {
+			sell(temp[i].unit_id);
+			abondon_bound--;
+		}
+	}
+	
+}

@@ -1,123 +1,77 @@
-void init_map2() {
-	for (int i = 0; i < MAP_SIZE; i++) {
-		for (int j = 0; j < MAP_SIZE; j++) {
-			if (ts19_map[i][j] == 1) {
-				map2[i][j] = 0 + 100 * (map[i][j] - road1 + 1);
-				continue;
-			}
-		}
-	}
-	for (int k = 1; k <30; k++) {
-		int map_temp[200][200] = { 0 };
-		for (int i = 0; i < MAP_SIZE; i++) {
-			for (int j = 0; j < MAP_SIZE; j++) {
-				if (map_temp[i][j] == 0 && map2[i][j] != 0) {
-					if (!outofRange(i, j + 1) && map2[i][j + 1] == 0) {
-						map2[i][j + 1] = map2[i][j] + 1;  map_temp[i][j + 1] = 1;
-					}
-					if (!outofRange(i, j - 1) && map2[i][j - 1] == 0) {
-						map2[i][j - 1] = map2[i][j] + 1; map_temp[i][j - 1] = 1;
-						}
-					if (!outofRange(i + 1, j) && map2[i + 1][j] == 0) { map2[i + 1][j] = map2[i][j] + 1; map_temp[i + 1][j] = 1; }
-					if (!outofRange(i - 1, j) && map2[i - 1][j] == 0) {
-						map2[i - 1][j] = map2[i][j] + 1; map_temp[i - 1][j] = 1;
-					}
-				}
-			}
+vector<Position> _Construct::find_best_place()
+{
+	//对于防御建筑来说 
+	if (this->buildingtype >= Bool && this->buildingtype <= Hawkin) {
 
-		}
-
-	}
-}
-void init_map() {		//初始化地图并将路进行标号 ,第0回合不需要对建筑标记吗？ 
-	if (state->turn == 0) {    //如果路不往回拐的话，似乎可以简单地解决，如果往回拐我就不会了 
-		my_base_pos = state->building[ts19_flag][0].pos;
-		enemy_base_pos = state->building[1 - ts19_flag][0].pos;
-		//先处理和左边主基地不在同一行的路 
-		for (int i = 7; i < MAP_SIZE ; i++) {      
-			int road_count = 0;
-			for (int j = 0; j < MAP_SIZE; j++) {
-				switch (ts19_map[i][j])
-				{
-				case 1: {
-					map[i][j] = road1 + road_count;
-					if (j + 1 != MAP_SIZE && ts19_map[i][j + 1] != 1)  //考虑到同一条路可能横在同一行中的情况 
-						road_count++;
-				}break;
-				case 2: {
-					map[i][j] = base;
-				}break;
-				case 0: {
-					map[i][j] = blank;
-				}break;
-				default:
-					break;
-				}
-			}
-		}
-		//再处理和左边主基地在同一行的情况 
+		vector<int> load_fit = vector<int>(road_num); //判断适合在哪条路周围建造该建筑 
+		for (int i = 0; i < road_num; i++)
 		{
-			int road_left = 0;  
-			int i = 7;
-			for (int j = 0; j <= 7; j++) if (ts19_map[i][j] == 1) road_left += 1;
-			for (int i = 6; i >=0; i--) {
-				int road_count = road_left;
-				for (int j = 0; j <= MAP_SIZE - 1; j++) {
-					switch (ts19_map[i][j])
-					{
-					case 1: {
-						map[i][j] = road1 + road_count;
-						
-						if (j + 1 != MAP_SIZE && ts19_map[i][j + 1] != 1)  //考虑到同一条路可能横在同一行中的情况 
-							road_count++;
-					}break;
-					case 2: {
-						map[i][j] = base;
-					}break;
-					case 0: {
-						map[i][j] = blank;
-					}break;
-					default:
-						break;
-					}
-				}
-				if (ts19_map[i][7] == 1)  road_left++;
-			}
+			for (int j = 0; j < all_unit_num; j++)
+				load_fit[i] += ensoldier_num[i][j] * restrain_table[this->buildingtype][j];  //此处应有bug 
 		}
 
-	} 
-	cout << "map is OK" << endl;
-	//以下为map2的初始化   
-	
-	/*if (state->turn == 0){
-																																		int point = 0; int p = 0;
-	for (int i = 0; i < MAP_SIZE; i++) {
-		for (int j = 0; j < MAP_SIZE; j++) {
-			map2[i][j] = -1;
-			//  cout << "h";
-			if (ts19_map[i][j] == 1) {
-				map2[i][j] = 0 + 100 * (map[i][j] - road1 + 1);
-				//cout << "ij" << i << " " << j << endl;
-				continue;
-			}
-			if (map[i][j] == blank) {
-				p++;
-				for (int k = 1; k <= 50; k++) {
-					//cout << "k:" << k<<endl;
-					tranverse_r(Position(i, j), k, paint_map2);
-					if (map2[i][j] != -1) {
-						point++;
-						break;
-					}
+		priority_queue<Node2> q;    //优先级队列，保存utility最高的位置 
+
+		int w1 = 1, w2 = 1;
+		int start = 150 * ts19_flag + 0* (1 - ts19_flag);
+		int end = 200 * ts19_flag + 50 * (1 - ts19_flag);
+		for (int i = start; i<end; i++)    //从主基地周围开始寻找，只寻找50*50的地方 
+			for (int j = start; j<end; j++) {
+				if ((i<7 && j<7) || (i>192 && j>192))  continue; //不找主基地 
+				if (map[i][j] == legal_area)
+				{
+					int distance = map2[i][j] % 100 > calculate_attackRange(this->buildingtype, state->age[ts19_flag]) ? map2[i][j] % 100 : 0; //只要不超过攻击范围，离路距离越大越好 
+					utility = w1 * distance + w2 * load_fit[map2[i][j] / 100 - 1];   //map2申明在tree中，未实现 ,此处要减一吗
+					Node2* temp = new Node2(); temp->utility = utility; temp->p = Position(i, j);
+					q.push(*temp);
 				}
 			}
+		vector<Position> best_places;
+		for (int i = 0; i<this->construct_num; i++)
+		{
+			best_places.push_back(q.top().p); q.pop();
 		}
-		}
-	cout << "p" << p << endl;
-	cout << "point" << point;
-	cout << "map2 is OK" << endl;
-	}*/
-	if (state->turn == 0) {
-		init_map2();
+		return best_places;
 	}
+//对于进攻建筑来说 
+	/*
+if (this->buildingtype >= Shannon && this->buildingtype <= Tony_Stark) {//太麻烦了未完成，可以先注释掉用random 
+	vector<int> weakness = vector<int>(road_num);    //根据我方小兵死亡速度 判断这条路是否值得进攻，这么做可能会落后于敌方建筑情况,另外初始可能有问题 
+															//上回合开始时这条路上某类小兵血量 - 上回合掉血量 + 上回合生产量 =  本回合开始时这条路上某类小兵血量
+	vector<Building>& building_set = state->building[ts19_flag];
+	vector<int> production = vector<int>(road_num);  //话说这一步可以在refresh做 , state里面保存的是回合开始时的数据吗？ 
+	for (auto iter = building_set.cbegin(); iter != building_set.cend(); iter++) {
+		production[map[iter->pos.x][iter->pos.y] - road1] += OriginalSoldierAttribute[OriginalBuildingAttribute[this->buildingtype][4]][2];//如何计算某类建筑对应的小兵血量？ 
+	}
+	for (int i = 0; i<road_num; i++)
+	{
+		for (int j = 0; j<all_unit_num; j++)
+			weakness[i] += mysoldier_heal_last[i][this->buildingtype] - mysoldier_heal[i][this->buildingtype] + production[i];
+	}
+
+	priority_queue<Node2> q;    //优先级队列，保存utility最高的位置 
+
+	int w1 = 1, w2 = 1, w3 = 1;
+	Position my_base = state->building[ts19_flag][0].pos;
+	for (int i = 0; i<190; i++)    //从主基地周围开始寻找，只寻找190*190的地方 
+		for (int j = 0; j<190; j++) {
+			if (i<7 && j<7)  continue; //不找主基地 
+			if (map[i][j] == legal_area)
+			{
+				int distance = map2[i][j] % 100 > calculate_attackRange(this->buildingtype, state->age[ts19_flag]) ? map2[i][j] % 100 : 0; //只要不超过攻击范围，离路距离越大越好 
+				utility = w1 * dist(Position(i, j), my_base) + w2 * weakness[map2[i][j] / 100-1] + w3 * distance;
+				Node2* temp = new Node2(); temp->utility = utility; temp->p = Position(i, j);
+				q.push(*temp);
+			}
+		}
+	vector<Position> best_places;
+	for (int i = 0; i<this->construct_num; i++)
+	{
+		best_places.push_back(q.top().p); q.pop();
+	}
+	return best_places;
+
+}*/
+
+
 }

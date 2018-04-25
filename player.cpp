@@ -59,7 +59,7 @@ int map[MAP_SIZE][MAP_SIZE] = { 0 };						//这个括号内得有0，不然有bu
 int map2[MAP_SIZE][MAP_SIZE] = { 0 };
  vector<vector<float>> mysoldier_heal ;           //每条路上的我方血量
 vector<vector<float>> mysoldier_heal_last ;           //每条路上的我方血量_上回合
-vector<vector<int>> ensoldier_num = vector<vector<int>>(road_num);				//每条路上的敌方兵力
+vector<vector<int>> ensoldier_num;			//每条路上的敌方兵力
 vector<vector<int>> enbuilding_num ;           //每条路附近的敌方建筑 
 
 
@@ -165,6 +165,7 @@ int calculate_building_force(BuildingType b, int level) {
 	return  OriginalBuildingAttribute[b][ORIGINAL_BUILDING_POINT];
 }
 float calculate_utility(Soldier a) {   //计算一个已经存在的兵的效用 
+	                                                                                                                       
 	int distance = (a.flag == ts19_flag) ? dist(a.pos, enemy_base_pos) : dist(a.pos, my_base_pos);
 	return	a.heal * utility_weight1[a.soldier_name][_hp] +
 		distance * utility_weight1[a.soldier_name][_pos] +
@@ -468,8 +469,22 @@ void init_map() {		//初始化地图并将路进行标号 ,第0回合不需要�
 	
 }
 void refresh_unit() {		//将敌方unit统计表清零，并重新统计,实际上还没用到
-	for (int i = 0; i <= road_num; i++)
-		for (int j = 0; j <= all_unit_num - 1; j++) {
+	if (state->turn == 0) {
+		ensoldier_num.resize(road_num);
+		for (int i = 0; i < road_num; i++)
+			ensoldier_num[i].resize(all_unit_num);
+
+		mysoldier_heal.resize(road_num);
+		for (int i = 0; i < road_num; i++)
+			mysoldier_heal[i].resize(all_unit_num);
+
+		mysoldier_heal_last.resize(road_num);
+		for (int i = 0; i < road_num; i++)
+			mysoldier_heal_last[i].resize(all_unit_num);
+	}
+
+	for (int i = 0; i < road_num; i++)
+		for (int j = 0; j <all_unit_num; j++) {
 			ensoldier_num[i][j] = 0;
 		}
 	vector<Soldier>& soldier_set1 = state->soldier[1 - ts19_flag];
@@ -477,8 +492,8 @@ void refresh_unit() {		//将敌方unit统计表清零，并重新统计,实际�
 		ensoldier_num[map[iter->pos.x][iter->pos.y] - road1][iter->soldier_name] ++;
 	}
 	//将我方unit统计表清零，并重新统计
-	for (int i = 0; i <= road_num; i++)
-		for (int j = 0; j <= all_unit_num - 1; j++) {
+	for (int i = 0; i < road_num; i++)
+		for (int j = 0; j < all_unit_num; j++) {
 			mysoldier_heal[i][j] = 0;
 		}
 	vector<Soldier>& soldier_set2 = state->soldier[ts19_flag];
@@ -486,8 +501,8 @@ void refresh_unit() {		//将敌方unit统计表清零，并重新统计,实际�
 		mysoldier_heal[map[iter->pos.x][iter->pos.y] - road1][iter->soldier_name] += iter->heal;
 	}
 
-	for (int i = 0; i <= road_num; i++)   //将我方上回合unit血量统计表清零并重新统计 
-		for (int j = 0; j <= all_unit_num - 1; j++) {
+	for (int i = 0; i < road_num; i++)   //将我方上回合unit血量统计表清零并重新统计 
+		for (int j = 0; j <all_unit_num; j++) {
 			mysoldier_heal_last[i][j] = 0;
 		}
 	vector<Soldier>& soldier_set3 = all_state.back()->soldier[ts19_flag];
@@ -729,9 +744,10 @@ void Node::tick(int f_power, int f_resource, int f_utility)
 		for (int i = 0; i < this->children.size(); i++) {
 			all_utility += children[i]->assess();    //调用assess的时候需要计算并保存节点的utility 
 		}
-		for (int i = 0; i< this->children.size(); i++) {
+
+		/*for (int i = 0; i< this->children.size(); i++) {
 			children[i]->tick(max_power, max_resource, all_utility);
-		}
+		}*/
 	}
 	else
 		execute();
@@ -799,7 +815,7 @@ void Tree::tranverse() {
 	this->root->children[i]->execute();
 	}*/
 	root->utility = 1;
-	//root->tick(60 + 40 * state->age[ts19_flag], state->resource[ts19_flag].resource, root->utility);
+	root->tick(60 + 40 * state->age[ts19_flag], state->resource[ts19_flag].resource, root->utility);
 }
 void f_player()
 {	//init 函数，测试，之后的路有问题
@@ -856,6 +872,7 @@ int _UpgradeAGE::assess() {
 }
 
 int _Development::assess() {
+	
 	float s_utility = 0, en_s_utility = 0;
 	float b_utility = 0, en_b_utility = 0;
 	//计算所有的效用并叠加，直接比较差值
@@ -872,7 +889,7 @@ int _Development::assess() {
 			en_b_utility += calculate_utility(state->building[1 - ts19_flag][i]);
 		}
 	}
-	for (int i = 0; i <= state->soldier[ts19_flag].size() - 1; i++) {
+	for (int i = 0; i < state->soldier[ts19_flag].size() ; i++) {
 		s_utility += calculate_utility(state->soldier[ts19_flag][i]);
 	}
 	for (int i = 0; i <= state->soldier[1 - ts19_flag].size() - 1; i++) {
